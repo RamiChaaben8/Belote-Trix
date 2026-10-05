@@ -141,13 +141,15 @@ describe("GameEngine full matches", () => {
       }
     });
   }
-  it("each non-FiftyOne round distributes its full points", () => {
+  it("each non-FiftyOne round distributes its full base points and multiplies selector by 2", () => {
     const e = playFullGame("medium", 42);
     for (const r of e.results) {
-      const sum = r.scores.reduce((a, b) => a + b, 0);
-      if (r.mode === "KingOfHearts") expect(sum).toBe(150);
-      if (r.mode === "Diamonds") expect(sum).toBe(80);
-      if (r.mode === "Queens") expect(sum).toBe(80);
+      const baseSum = r.base.reduce((a, b) => a + b, 0);
+      if (r.mode === "KingOfHearts") expect(baseSum).toBe(150);
+      if (r.mode === "Diamonds") expect(baseSum).toBe(80);
+      if (r.mode === "Queens") expect(baseSum).toBe(80);
+      // Selector score is doubled
+      expect(r.scores[r.selector]).toBe(r.base[r.selector] * 2);
     }
   });
   it("rejects out-of-turn actions", () => {

@@ -17,7 +17,7 @@ export class RoundManager {
   total = 0;
   direction: 1 | -1 = 1;
   finished = false;
-  private leader: number;
+  leader: number;
 
   constructor(mode: ModeId, hands: Card[][], selector: number) {
     this.mode = mode;

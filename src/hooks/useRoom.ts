@@ -35,6 +35,16 @@ export interface RoomView {
   hand: CardData[];
   legal: Move[];
   handCounts: number[];
+  dealer: number | null;
+  leader: number | null;
+  stats: {
+    modesWon: number;
+    tricksWon: number;
+    diamonds: number;
+    queens: number;
+    kingHearts: number;
+    fiftyOneWins: number;
+  }[] | null;
   round: {
     mode: string;
     trick: { seat: number; card: CardData }[];
@@ -44,7 +54,22 @@ export interface RoomView {
     direction: 1 | -1;
     tricks: { index: number; winner: number; points: number; plays: { seat: number; card: CardData }[] }[];
   } | null;
-  history: { number: number; mode: string; selector: number; scores: number[] }[];
+  history: {
+    number: number;
+    mode: string;
+    selector: number;
+    base: number[];
+    multipliers: number[];
+    scores: number[];
+  }[];
+  lastRoundResult: {
+    number: number;
+    mode: string;
+    selector: number;
+    base: number[];
+    multipliers: number[];
+    scores: number[];
+  } | null;
   chat: ChatEntry[];
 }
 

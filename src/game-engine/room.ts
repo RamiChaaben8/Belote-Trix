@@ -203,6 +203,9 @@ export class GameRoom {
       hand,
       legal,
       handCounts: e ? [0, 1, 2, 3].map((s) => (e.phase === "selecting" ? 8 : r ? r.hands[s].length : 8)) : [0, 0, 0, 0],
+      dealer: e ? (e.roundNumber > 0 ? (e.roundNumber - 1) % 4 : 0) : null,
+      leader: r ? r.leader : null,
+      stats: e ? e.stats() : null,
       round:
         showRound && e!.phase === "playing"
           ? {
@@ -215,7 +218,15 @@ export class GameRoom {
               tricks: r!.completed.map((t) => ({ index: t.index, winner: t.winner, points: t.points, plays: t.plays })),
             }
           : null,
-      history: (e?.results ?? []).map((x) => ({ number: x.number, mode: x.mode, selector: x.selector, scores: x.scores })),
+      history: (e?.results ?? []).map((x) => ({
+        number: x.number,
+        mode: x.mode,
+        selector: x.selector,
+        base: x.base,
+        multipliers: x.multipliers,
+        scores: x.scores,
+      })),
+      lastRoundResult: e?.results.length ? e.results[e.results.length - 1] : null,
       chat: this.chat.slice(-50),
     };
   }

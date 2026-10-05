@@ -24,7 +24,7 @@ export class KingOfHeartsMode extends TrickMode {
 export class DiamondsMode extends TrickMode {
   readonly id = "Diamonds" as const;
   readonly restrictedSuit: Suit = "D";
-  readonly avoid = false;
+  readonly avoid = true;
   cardPoints(c: CardData): number {
     return c.suit === "D" ? 10 : 0;
   }
@@ -33,7 +33,7 @@ export class DiamondsMode extends TrickMode {
 export class QueensMode extends TrickMode {
   readonly id = "Queens" as const;
   readonly restrictedSuit = null;
-  readonly avoid = false;
+  readonly avoid = true;
   cardPoints(c: CardData): number {
     return c.rank === "Q" ? 20 : 0;
   }

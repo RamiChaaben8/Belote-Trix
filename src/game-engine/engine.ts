@@ -10,8 +10,21 @@ export interface RoundResult {
   number: number;
   mode: ModeId;
   selector: number;
+  /** Raw points before the selector multiplier. */
+  base: number[];
+  multipliers: number[];
+  /** Final points (base x multiplier). */
   scores: number[];
   round: RoundManager;
+}
+
+export interface PlayerStats {
+  modesWon: number;
+  tricksWon: number;
+  diamonds: number;
+  queens: number;
+  kingHearts: number;
+  fiftyOneWins: number;
 }
 
 export class GameEngine {
@@ -73,10 +86,16 @@ export class GameEngine {
   private finishRound(): EngineEvent[] {
     const r = this.round!;
     const before = [...this.totals];
-    this.totals = ScoreManager.add(this.totals, r.scores);
-    this.results.push({ number: this.roundNumber, mode: r.mode, selector: this.selector, scores: [...r.scores], round: r });
+    const base = [...r.scores];
+    const multipliers = ScoreManager.multipliers(this.selector, this.players.length);
+    const finalScores = ScoreManager.applyMultiplier(base, this.selector);
+    this.totals = ScoreManager.add(this.totals, finalScores);
+    this.results.push({ number: this.roundNumber, mode: r.mode, selector: this.selector, base, multipliers, scores: finalScores, round: r });
     const events: EngineEvent[] = [
-      { type: "round_finished", data: { roundNumber: this.roundNumber, mode: r.mode, scores: r.scores } },
+      {
+        type: "round_finished",
+        data: { roundNumber: this.roundNumber, mode: r.mode, selector: this.selector, base, multipliers, scores: finalScores },
+      },
       { type: "score_updated", data: { totals: this.totals, deltas: this.totals.map((t, i) => t - before[i]) } },
     ];
     if (this.remainingModes(this.selector).length === 0) this.selector++;
@@ -88,6 +107,32 @@ export class GameEngine {
       this.round = r; // keep finished round visible until the selector picks a mode
     }
     return events;
+  }
+
+  /** Per-seat statistics over all finished rounds. */
+  stats(): PlayerStats[] {
+    const stats: PlayerStats[] = this.players.map(() => ({ modesWon: 0, tricksWon: 0, diamonds: 0, queens: 0, kingHearts: 0, fiftyOneWins: 0 }));
+    for (const res of this.results) {
+      const min = Math.min(...res.scores);
+      res.scores.forEach((s, seat) => {
+        if (s === min) stats[seat].modesWon++;
+      });
+      if (res.mode === "FiftyOne") {
+        res.base.forEach((b, seat) => {
+          if (b > 0) stats[seat].fiftyOneWins++;
+        });
+        continue;
+      }
+      for (const t of res.round.completed) {
+        stats[t.winner].tricksWon++;
+        for (const p of t.plays) {
+          if (res.mode === "Diamonds" && p.card.suit === "D") stats[t.winner].diamonds++;
+          if (res.mode === "Queens" && p.card.rank === "Q") stats[t.winner].queens++;
+          if (res.mode === "KingOfHearts" && p.card.suit === "H" && p.card.rank === "K") stats[t.winner].kingHearts++;
+        }
+      }
+    }
+    return stats;
   }
 
   /** Seat expected to act, or null when the game is finished. */

@@ -1,170 +1,267 @@
 "use client";
 
-import { useState } from "react";
-import { PlayingCard } from "@/components/PlayingCard";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardTitle } from "@/components/ui/card";
-import type { LastTrick, RoomView } from "@/hooks/useRoom";
-import { cn, MODE_HELP, MODE_LABEL } from "@/lib/utils";
-import type { CardData, Move } from "@/types";
+import { CardFan } from "@/components/CardFan";
+import { OpponentHand } from "@/components/OpponentHand";
+import { PlayerPod } from "@/components/PlayerPod";
+import { CenterTrick } from "@/components/CenterTrick";
+import { ScoreboardPanel } from "@/components/ScoreboardPanel";
+import { ChatPanel } from "@/components/ChatPanel";
+import { RoundSummaryModal } from "@/components/RoundSummaryModal";
+import { FinalResultsModal } from "@/components/FinalResultsModal";
+import type { LastTrick, RoomView, ChatEntry } from "@/hooks/useRoom";
+import type { CardData, Move, ModeId } from "@/types";
 
 type Act = (event: string, payload?: unknown) => Promise<unknown>;
 
 const POS = ["bottom", "left", "top", "right"] as const;
 
-export function Table({ room, lastTrick, act, gameId }: { room: RoomView; lastTrick: LastTrick | null; act: Act; gameId: string | null }) {
+export function Table({
+  room,
+  lastTrick,
+  chat,
+  act,
+  gameId,
+}: {
+  room: RoomView;
+  lastTrick: LastTrick | null;
+  chat?: ChatEntry[];
+  act: Act;
+  gameId: string | null;
+}) {
   const me = room.you ?? 0;
   const rel = (seat: number) => (seat - me + 4) % 4;
+
   const [aceFor, setAceFor] = useState<CardData | null>(null);
+  const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
+  const [dismissedRoundNumber, setDismissedRoundNumber] = useState<number>(0);
+  const [isCollecting, setIsCollecting] = useState(false);
+
   const round = room.round;
   const myTurn = room.you !== null && room.actor === room.you;
   const isSelector = room.phase === "selecting" && room.selector === room.you;
-  const trickToShow = lastTrick && (!round || round.trick.length === 0) ? lastTrick.plays : (round?.trick ?? []);
   const name = (s: number) => room.seats[s]?.name ?? `Seat ${s + 1}`;
 
-  const legalFor = (c: CardData): Move[] => room.legal.filter((m) => m.card.suit === c.suit && m.card.rank === c.rank);
-  const clickCard = (c: CardData) => {
+  // 2-second glow and celebration on winning card before collecting
+  useEffect(() => {
+    if (lastTrick) {
+      setIsCollecting(false);
+      const timer = setTimeout(() => {
+        setIsCollecting(true);
+      }, 1500);
+      return () => clearTimeout(timer);
+    } else {
+      setIsCollecting(false);
+    }
+  }, [lastTrick]);
+
+  const legalFor = (c: CardData): Move[] =>
+    room.legal.filter((m) => m.card.suit === c.suit && m.card.rank === c.rank);
+
+  const handleCardClick = (c: CardData) => {
     const moves = legalFor(c);
     if (!moves.length || !myTurn) return;
-    if (moves.length > 1) setAceFor(c);
-    else {
+
+    setSelectedCard(c);
+    if (moves.length > 1) {
+      setAceFor(c);
+    } else {
       setAceFor(null);
       void act("play_card", moves[0]);
+      setTimeout(() => setSelectedCard(null), 350);
     }
   };
 
-  const modeLabel = round ? MODE_LABEL[round.mode] : room.phase === "selecting" && room.selector !== null ? "Choosing mode…" : "—";
+  // Center trick cards
+  const centerPlays =
+    lastTrick && (!round || round.trick.length === 0)
+      ? lastTrick.plays
+      : round?.trick ?? [];
+
+  const winningSeat = lastTrick ? lastTrick.winner : null;
+  const winningPlayerName = lastTrick ? name(lastTrick.winner) : null;
+
+  // Round summary popup at end of round
+  const latestRoundResult = room.history.length
+    ? room.history[room.history.length - 1]
+    : null;
+
+  const showRoundSummary =
+    latestRoundResult &&
+    dismissedRoundNumber < latestRoundResult.number &&
+    (room.phase === "selecting" || room.phase === "finished");
+
+  const currentMode =
+    round?.mode ??
+    (room.history.length ? room.history[room.history.length - 1].mode : "");
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-200" data-testid="status-bar">
-          <span className="rounded bg-slate-800 px-2 py-1">
-            Round {Math.min(room.roundNumber + (room.phase === "selecting" ? 1 : 0), room.totalRounds)}/{room.totalRounds}
-          </span>
-          <span className="rounded bg-emerald-800 px-2 py-1 font-semibold" data-testid="current-mode">
-            Mode: {modeLabel}
-          </span>
-          {room.selector !== null && room.phase !== "finished" && (
-            <span className="rounded bg-slate-800 px-2 py-1" data-testid="current-selector">
-              Selector: {name(room.selector)}
-            </span>
-          )}
-          {round && !round.broken && (round.mode === "KingOfHearts" || round.mode === "Diamonds") && (
-            <span className="rounded bg-amber-700 px-2 py-1">{round.mode === "KingOfHearts" ? "♥" : "♦"} not broken</span>
-          )}
+    <div className="relative w-full h-[calc(100vh-4rem)] min-h-[640px] max-h-[1050px] flex flex-col justify-between items-center select-none overflow-hidden">
+      {/* ======================================================== */}
+      {/* TOP HEADER OVERLAY BAR: SCOREBOARD (LEFT) & CHAT (RIGHT) */}
+      {/* ======================================================== */}
+      <div className="w-full flex items-start justify-between px-3 pt-2 pointer-events-none z-30">
+        {/* TOP LEFT: COMPACT SCOREBOARD PANEL */}
+        <div className="pointer-events-auto">
+          <ScoreboardPanel
+            roundNumber={Math.min(
+              room.roundNumber + (room.phase === "selecting" ? 1 : 0),
+              room.totalRounds
+            )}
+            totalRounds={room.totalRounds}
+            mode={currentMode}
+            selectorName={room.selector !== null ? name(room.selector) : "—"}
+            seats={[0, 1, 2, 3].map((seat) => ({
+              seat,
+              name: name(seat),
+              avatar: room.seats[seat]?.avatar ?? "🙂",
+              total: room.totals[seat],
+              isYou: seat === me,
+            }))}
+          />
         </div>
 
-        <div className="relative mx-auto aspect-[4/3] w-full max-w-3xl rounded-[3rem] border-8 border-amber-900 bg-gradient-to-b from-felt-light to-felt-dark shadow-2xl sm:aspect-[16/10]">
-          {room.seats.map((s, seat) => {
-            const pos = POS[rel(seat)];
-            if (!s) return null;
-            const active = room.actor === seat && room.phase !== "finished";
+        {/* TOP RIGHT: COMPACT COLLAPSIBLE CHAT PANEL */}
+        <div className="pointer-events-auto">
+          <ChatPanel
+            chat={chat ?? room.chat ?? []}
+            onSend={(content) => void act("chat_message", { content })}
+            onlineCount={room.seats.filter((s) => s && s.connected).length}
+          />
+        </div>
+      </div>
+
+      {/* ======================================================== */}
+      {/* CENTER: ENLARGED POKER TABLE (DOMINATES SCREEN)          */}
+      {/* ======================================================== */}
+      <div className="relative flex-1 w-full max-w-6xl px-1 sm:px-4 flex items-center justify-center -my-2">
+        <div
+          data-testid="poker-table"
+          className="relative flex items-center justify-center w-full h-[76vh] max-h-[620px] rounded-[5rem] sm:rounded-[7.5rem] border-[12px] sm:border-[20px] border-amber-950/95 shadow-[0_35px_80px_rgba(0,0,0,0.95),inset_0_0_100px_rgba(0,0,0,0.75)]"
+          style={{
+            background:
+              "radial-gradient(ellipse at center, #13734a 0%, #0d5435 45%, #083722 80%, #031c11 100%)",
+          }}
+        >
+          {/* Elegant gold inner accent ring with subtle casino felt lighting */}
+          <div className="absolute inset-2 sm:inset-4 rounded-[4.2rem] sm:rounded-[6.2rem] border-2 border-amber-400/40 shadow-[inset_0_0_35px_rgba(251,191,36,0.18)] pointer-events-none" />
+
+          {/* Broken Suits indicator in corner of table */}
+          {round && (round.mode === "KingOfHearts" || round.mode === "Diamonds") && (
+            <div className="absolute top-5 right-10 z-10 hidden sm:flex items-center gap-1.5 text-[11px]">
+              <span
+                className={`px-2.5 py-0.5 rounded-full border shadow-md ${
+                  round.broken
+                    ? "bg-rose-950/90 border-rose-400 text-rose-300 font-bold"
+                    : "bg-slate-900/80 border-slate-700 text-slate-400"
+                }`}
+              >
+                {round.mode === "KingOfHearts" ? "♥ Hearts" : "♦ Diamonds"}:{" "}
+                {round.broken ? "Broken" : "Locked"}
+              </span>
+            </div>
+          )}
+
+          {/* 4 PLAYERS POSITIONED MINIMALLY AROUND TABLE */}
+          {room.seats.map((seatData, seatIdx) => {
+            if (!seatData) return null;
+            const position = POS[rel(seatIdx)];
+            const isTurn = room.actor === seatIdx && room.phase !== "finished";
+            const isDealer = room.dealer === seatIdx;
+            const isRoundSelector = room.selector === seatIdx;
+            const count = room.handCounts[seatIdx] ?? 0;
+
             return (
               <div
-                key={seat}
-                data-testid={`seat-${seat}`}
-                className={cn(
-                  "absolute flex flex-col items-center gap-1 text-center",
-                  pos === "bottom" && "bottom-1 left-1/2 -translate-x-1/2",
-                  pos === "top" && "left-1/2 top-1 -translate-x-1/2",
-                  pos === "left" && "left-1 top-1/2 -translate-y-1/2",
-                  pos === "right" && "right-1 top-1/2 -translate-y-1/2",
-                )}
+                key={seatIdx}
+                data-testid={`seat-${seatIdx}`}
+                className={`absolute z-20 flex flex-col items-center ${
+                  position === "bottom"
+                    ? "bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2"
+                    : position === "top"
+                    ? "top-2 sm:top-3 left-1/2 -translate-x-1/2"
+                    : position === "left"
+                    ? "left-2 sm:left-4 top-1/2 -translate-y-1/2"
+                    : "right-2 sm:right-4 top-1/2 -translate-y-1/2"
+                }`}
               >
-                <div className={cn("flex items-center gap-1 rounded-full bg-black/60 px-3 py-1 text-xs text-white", active && "ring-2 ring-amber-400 animate-pulse")}>
-                  <span className="text-lg">{s.avatar}</span>
-                  <span className="max-w-[90px] truncate font-semibold">{s.name}</span>
-                  {!s.connected && <span title="disconnected">⚠️</span>}
-                  <span className="rounded bg-emerald-700 px-1">{room.totals[seat]}</span>
-                </div>
-                {pos !== "bottom" && room.phase !== "finished" && (
-                  <div className="flex -space-x-8">
-                    {Array.from({ length: Math.min(room.handCounts[seat], 8) }).map((_, i) => (
-                      <PlayingCard key={i} hidden small />
-                    ))}
+                <PlayerPod
+                  seat={seatIdx}
+                  name={seatData.name}
+                  avatar={seatData.avatar}
+                  totalScore={room.totals[seatIdx]}
+                  isBot={seatData.isBot}
+                  connected={seatData.connected}
+                  isCurrentTurn={isTurn}
+                  isDealer={isDealer}
+                  isSelector={isRoundSelector}
+                  cardCount={count}
+                  position={position}
+                />
+
+                {/* Opponents' Card Backs */}
+                {position !== "bottom" && room.phase !== "finished" && (
+                  <div
+                    className={`pointer-events-none ${
+                      position === "left"
+                        ? "absolute left-full top-1/2 -translate-y-1/2 ml-2"
+                        : position === "right"
+                        ? "absolute right-full top-1/2 -translate-y-1/2 mr-2"
+                        : "mt-1"
+                    }`}
+                  >
+                    <OpponentHand cardCount={count} position={position} />
                   </div>
                 )}
               </div>
             );
           })}
 
-          <div className="absolute left-1/2 top-1/2 h-1/2 w-1/2 -translate-x-1/2 -translate-y-1/2">
-            {round?.mode === "FiftyOne" ? (
-              <div className="absolute inset-0 flex flex-col items-center justify-center" data-testid="fifty-total">
-                <div className="text-5xl font-extrabold text-white drop-shadow">{round.total}</div>
-                <div className="text-xs text-emerald-100">/ 51 · {round.direction === 1 ? "↻ clockwise" : "↺ counter-clockwise"}</div>
-              </div>
-            ) : null}
-            {trickToShow.map((p) => {
-              const pos = POS[rel(p.seat)];
-              return (
-                <div
-                  key={p.seat}
-                  className={cn(
-                    "absolute transition-all duration-300",
-                    pos === "bottom" && "bottom-0 left-1/2 -translate-x-1/2",
-                    pos === "top" && "left-1/2 top-0 -translate-x-1/2",
-                    pos === "left" && "left-0 top-1/2 -translate-y-1/2",
-                    pos === "right" && "right-0 top-1/2 -translate-y-1/2",
-                    lastTrick && lastTrick.winner === p.seat && "scale-110",
-                  )}
-                >
-                  <PlayingCard card={p.card} small highlight={!!lastTrick && lastTrick.winner === p.seat} />
-                </div>
-              );
-            })}
-            {round?.mode === "FiftyOne" && round.trick.length === 0 && trickToShow.length === 0 && null}
+          {/* ======================================================== */}
+          {/* CENTER OF TABLE: DUAL STATE (MODE SELECTION / TRICKS)   */}
+          {/* ======================================================== */}
+          <div className="absolute inset-0 flex items-center justify-center z-15">
+            <CenterTrick
+              isSelectingMode={room.phase === "selecting"}
+              isCurrentUserSelector={isSelector}
+              selectorName={room.selector !== null ? name(room.selector) : ""}
+              remainingModes={(room.remaining as ModeId[]) ?? []}
+              onSelectMode={(m) => void act("select_mode", { mode: m })}
+              plays={centerPlays}
+              youSeat={me}
+              winnerSeat={winningSeat}
+              winnerName={winningPlayerName}
+              mode={currentMode}
+              fiftyTotal={round?.mode === "FiftyOne" ? round.total : undefined}
+              fiftyDirection={round?.direction}
+              isCollecting={isCollecting}
+            />
           </div>
         </div>
+      </div>
 
-        {room.phase === "finished" ? (
-          <Card className="text-center">
-            <CardTitle>Game over</CardTitle>
-            <ul className="mb-3 space-y-1">
-              {room.totals
-                .map((t, seat) => ({ t, seat }))
-                .sort((a, b) => b.t - a.t)
-                .map(({ t, seat }, i) => (
-                  <li key={seat} className={cn("text-slate-200", i === 0 && "font-bold text-amber-300")}>
-                    {i === 0 ? "🏆 " : ""}
-                    {name(seat)} — {t}
-                  </li>
-                ))}
-            </ul>
-            {gameId && (
-              <a className="text-emerald-400 underline" href={`/replay/${gameId}`}>
-                Watch replay
-              </a>
-            )}
-          </Card>
-        ) : isSelector ? (
-          <Card>
-            <CardTitle>Choose your mode</CardTitle>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {room.remaining.map((m) => (
-                <Button key={m} variant="secondary" data-testid={`mode-${m}`} onClick={() => void act("select_mode", { mode: m })}>
-                  <span className="text-left">
-                    <span className="block">{MODE_LABEL[m]}</span>
-                    <span className="block text-xs font-normal text-slate-300">{MODE_HELP[m]}</span>
-                  </span>
-                </Button>
-              ))}
-            </div>
-          </Card>
-        ) : null}
-
+      {/* ======================================================== */}
+      {/* BOTTOM: USER HAND OF CARDS                               */}
+      {/* ======================================================== */}
+      <div className="w-full flex flex-col items-center justify-end z-25 pb-1 sm:pb-2">
+        {/* Ace choice popup for Fifty One mode */}
         {aceFor && myTurn && (
-          <div className="flex items-center justify-center gap-3">
-            <span className="text-sm text-slate-200">Ace counts as:</span>
+          <div className="flex items-center justify-center gap-3 p-2.5 bg-slate-950/95 border-2 border-amber-400 rounded-2xl mb-1 shadow-2xl z-30">
+            <span className="text-xs sm:text-sm font-black text-amber-300">
+              Play Ace as:
+            </span>
             {legalFor(aceFor).map((m) => (
               <Button
                 key={m.aceValue}
+                size="sm"
                 data-testid={`ace-${m.aceValue}`}
                 onClick={() => {
                   setAceFor(null);
+                  setSelectedCard(null);
                   void act("play_card", m);
                 }}
+                className="bg-emerald-600 hover:bg-emerald-500 font-black px-4 py-1 text-sm shadow-md"
               >
                 +{m.aceValue}
               </Button>
@@ -172,79 +269,85 @@ export function Table({ room, lastTrick, act, gameId }: { room: RoomView; lastTr
           </div>
         )}
 
+        {/* Turn prompt chip */}
         {room.you !== null && room.phase !== "finished" && (
-          <div>
-            <p className="mb-1 text-center text-sm text-slate-300" data-testid="turn-hint">
-              {myTurn ? (room.phase === "selecting" ? "Your pick" : "Your turn") : room.actor !== null ? `Waiting for ${name(room.actor)}…` : ""}
-            </p>
-            <div className="flex flex-wrap justify-center gap-1 sm:gap-2" data-testid="hand">
-              {room.hand.map((c) => {
-                const playable = myTurn && legalFor(c).length > 0;
-                return <PlayingCard key={c.rank + c.suit} card={c} onClick={playable ? () => clickCard(c) : undefined} disabled={!playable} />;
-              })}
-            </div>
-            {room.phase === "playing" && myTurn && room.legal.length === 0 && <p className="text-center text-xs text-amber-300">No legal move, you will be skipped.</p>}
+          <div className="flex items-center gap-2 mb-0.5">
+            <span
+              data-testid="turn-hint"
+              className={`text-xs sm:text-sm font-black px-4 py-0.5 rounded-full shadow-lg ${
+                myTurn
+                  ? "bg-amber-400 text-slate-950 animate-pulse border border-yellow-200"
+                  : "bg-slate-900/90 text-slate-300 border border-slate-700"
+              }`}
+            >
+              {myTurn
+                ? room.phase === "selecting"
+                  ? "Select a mode in the center of the table!"
+                  : "Your turn! Click a highlighted card to play"
+                : room.actor !== null
+                ? `Waiting for ${name(room.actor)}…`
+                : ""}
+            </span>
           </div>
         )}
-        {room.you === null && <p className="text-center text-sm text-slate-400">You are spectating.</p>}
+
+        {/* Realistic Flat Card Fan */}
+        {room.you !== null && room.phase !== "finished" && (
+          <div data-testid="hand" className="w-full flex justify-center">
+            <CardFan
+              cards={room.hand}
+              legalMoves={room.legal}
+              isMyTurn={myTurn}
+              selectedCard={selectedCard}
+              onCardClick={handleCardClick}
+              disabled={!myTurn}
+            />
+          </div>
+        )}
+
+        {room.you === null && (
+          <p className="text-center text-xs text-slate-400 py-2">
+            You are spectating this match.
+          </p>
+        )}
       </div>
 
-      <div className="space-y-4">
-        <Card>
-          <CardTitle>Scores</CardTitle>
-          <ul className="space-y-1 text-sm" data-testid="scoreboard">
-            {room.seats.map((s, seat) => (
-              <li key={seat} className="flex justify-between text-slate-200">
-                <span>
-                  {s?.avatar} {s?.name}
-                </span>
-                <span className="font-mono">
-                  {room.totals[seat]}
-                  {round && round.scores[seat] !== 0 && <span className="text-emerald-400"> (+{round.scores[seat]})</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card>
-          <CardTitle>Modes played</CardTitle>
-          <ul className="space-y-1 text-xs text-slate-300">
-            {room.seats.map((s, seat) => (
-              <li key={seat}>
-                <span className="font-semibold">{s?.name}:</span> {room.used[seat].map((m) => MODE_LABEL[m]).join(", ") || "—"}
-              </li>
-            ))}
-          </ul>
-        </Card>
-        <Card className="max-h-64 overflow-y-auto">
-          <CardTitle>Trick history</CardTitle>
-          {round && round.mode !== "FiftyOne" ? (
-            <ol className="space-y-1 text-xs text-slate-300">
-              {round.tricks.map((t) => (
-                <li key={t.index}>
-                  #{t.index + 1}: {t.plays.map((p) => `${p.card.rank}${p.card.suit}`).join(" ")} → <b>{name(t.winner)}</b>
-                  {t.points ? ` (+${t.points})` : ""}
-                </li>
-              ))}
-              {round.tricks.length === 0 && <li>No tricks yet.</li>}
-            </ol>
-          ) : (
-            <p className="text-xs text-slate-400">Tricks are not captured in this mode.</p>
-          )}
-          {room.history.length > 0 && (
-            <>
-              <h3 className="mb-1 mt-3 text-sm font-bold text-white">Past rounds</h3>
-              <ul className="space-y-1 text-xs text-slate-300">
-                {room.history.map((h) => (
-                  <li key={h.number}>
-                    R{h.number} {MODE_LABEL[h.mode]} ({name(h.selector)}): {h.scores.join(" / ")}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </Card>
-      </div>
+      {/* ======================================================== */}
+      {/* ROUND END BREAKDOWN MODAL                                */}
+      {/* ======================================================== */}
+      {showRoundSummary && latestRoundResult && (
+        <RoundSummaryModal
+          roundNumber={latestRoundResult.number}
+          mode={latestRoundResult.mode}
+          selectorSeat={latestRoundResult.selector}
+          players={room.seats.map((s, idx) => ({
+            seat: idx,
+            name: s?.name ?? `Seat ${idx + 1}`,
+            avatar: s?.avatar ?? "🙂",
+          }))}
+          baseScores={latestRoundResult.base}
+          multipliers={latestRoundResult.multipliers}
+          finalScores={latestRoundResult.scores}
+          onContinue={() => setDismissedRoundNumber(latestRoundResult.number)}
+        />
+      )}
+
+      {/* ======================================================== */}
+      {/* FINAL MATCH RESULTS SCREEN (LOWEST SCORE WINS)           */}
+      {/* ======================================================== */}
+      {room.phase === "finished" && (
+        <FinalResultsModal
+          players={room.seats.map((s, idx) => ({
+            seat: idx,
+            name: s?.name ?? `Seat ${idx + 1}`,
+            avatar: s?.avatar ?? "🙂",
+          }))}
+          totals={room.totals}
+          stats={room.stats}
+          replayId={gameId}
+          onPlayAgain={() => (window.location.href = "/")}
+        />
+      )}
     </div>
   );
 }
