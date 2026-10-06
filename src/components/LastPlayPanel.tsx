@@ -21,8 +21,8 @@ export function LastPlayPanel({ lastTrick, mode }: Props) {
   return (
     <div
       data-testid="last-play-panel"
-      className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 select-none pointer-events-auto"
-      style={{ width: "clamp(260px, 24vw, 340px)" }}
+      className="last-play absolute bottom-2 right-2 z-[3] select-none pointer-events-auto"
+      style={{ width: "clamp(150px, 30cqw, 300px)" }}
     >
       <div className="rounded-2xl bg-slate-950/95 border border-amber-500/50 backdrop-blur-md shadow-[0_15px_35px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col">
         {/* Gold Header */}

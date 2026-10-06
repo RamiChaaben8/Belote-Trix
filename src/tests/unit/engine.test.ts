@@ -147,7 +147,7 @@ describe("GameEngine full matches", () => {
       for (let seed = 1; seed <= 5; seed++) {
         const e = playFullGame(diff, seed);
         expect(e.phase).toBe("finished");
-        expect(e.results).toHaveLength(28);
+        expect(e.results).toHaveLength(32);
         for (let s = 0; s < 4; s++) expect([...e.used[s]].sort()).toEqual([...MODE_IDS].sort() as ModeId[]);
       }
     });
@@ -163,6 +163,8 @@ describe("GameEngine full matches", () => {
       if (r.mode === "Turns" && r.endReason !== "Capot") expect(baseSum).toBe(80);
       // LastTrick: exactly one winner gets +100, others 0
       if (r.mode === "LastTrick") expect(baseSum).toBe(100);
+      // General: cards/objectives (150 + 80 + 80), turns (80), and last trick (100).
+      if (r.mode === "General" && r.endReason !== "Capot") expect(baseSum).toBe(490);
       // Trix: 1st gets -100, 2nd gets -50, others 0 → sum = -150
       if (r.mode === "Trix") expect(baseSum).toBe(-150);
       // Selector score is doubled (except Capot which bypasses multiplier)

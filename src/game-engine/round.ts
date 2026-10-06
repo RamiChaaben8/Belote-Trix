@@ -1,5 +1,5 @@
 import { Card } from "./card";
-import { FIFTY_ONE_REWARD, FIFTY_ONE_TARGET, FiftyOneMode, ModeManager, TrickMode, TrixManager } from "./modes";
+import { FIFTY_ONE_REWARD, FIFTY_ONE_TARGET, FiftyOneMode, GeneralBreakdown, ModeManager, TrickMode, TrixManager } from "./modes";
 import { RuleEngine, TrickEngine } from "./rules";
 import { EngineEvent, ModeId, Move, Play, PlayRecord, Suit, TrickRecord } from "@/types";
 
@@ -13,7 +13,11 @@ export class RoundManager {
   completed: TrickRecord[] = [];
   plays: PlayRecord[] = [];
   broken = false;
+  readonly brokenSuits = new Set<Suit>();
   scores: number[] = [0, 0, 0, 0];
+  readonly generalBreakdown: GeneralBreakdown[] = Array.from({ length: 4 }, () => ({
+    kingHearts: 0, diamonds: 0, queens: 0, turns: 0, lastTrick: 0, capot: 0,
+  }));
   total = 0;
   direction: 1 | -1 = 1;
   finished = false;
@@ -51,11 +55,15 @@ export class RoundManager {
     return this.mode === "Trix";
   }
 
+  get isGeneral(): boolean {
+    return this.mode === "General";
+  }
+
   private trickMode(): TrickMode {
     return ModeManager.trick(this.mode);
   }
 
-  get restrictedSuit(): Suit | null {
+  get restrictedSuit(): Suit | Suit[] | null {
     if (this.isFifty || this.isTrix) return null;
     return this.trickMode().restrictedSuit;
   }
@@ -69,7 +77,7 @@ export class RoundManager {
       // If no legal moves: player must pass (represented by empty move list — engine skips them)
       return moves;
     }
-    return RuleEngine.legalTrickCards(hand, this.trick, this.restrictedSuit, this.broken).map((c) => ({
+    return RuleEngine.legalTrickCards(hand, this.trick, this.restrictedSuit, this.broken, this.brokenSuits).map((c) => ({
       card: c.toJSON(),
     }));
   }
@@ -168,8 +176,9 @@ export class RoundManager {
 
   private applyTrick(seat: number, card: Card): EngineEvent[] {
     const events: EngineEvent[] = [];
-    if (RuleEngine.isDiscardOfRestricted(card, this.trick, this.restrictedSuit)) {
-      if (!this.broken) events.push({ type: "suit_broken", data: { suit: card.suit } });
+    if (RuleEngine.isDiscardOfRestricted(card, this.trick, this.restrictedSuit, this.brokenSuits)) {
+      if (!this.brokenSuits.has(card.suit)) events.push({ type: "suit_broken", data: { suit: card.suit } });
+      this.brokenSuits.add(card.suit);
       this.broken = true;
     }
     this.trick.push({ seat, card: card.toJSON() });
@@ -179,6 +188,14 @@ export class RoundManager {
       const winner = TrickEngine.winner(this.trick);
       const points = this.trickMode().trickPoints(this.trick.map((p) => p.card));
       this.scores[winner] += points;
+      if (this.isGeneral) {
+        this.generalBreakdown[winner].turns += 10;
+        for (const p of this.trick) {
+          if (p.card.suit === "H" && p.card.rank === "K") this.generalBreakdown[winner].kingHearts += 150;
+          if (p.card.suit === "D") this.generalBreakdown[winner].diamonds += 10;
+          if (p.card.rank === "Q") this.generalBreakdown[winner].queens += 20;
+        }
+      }
       const rec: TrickRecord = {
         index: this.completed.length,
         leader: this.leader,
@@ -210,6 +227,23 @@ export class RoundManager {
           // Award +100 to the winner of the final (8th) trick
           this.scores[winner] += 100;
           this.endReason = "Last Trick Won";
+        } else if (this.isGeneral) {
+          this.generalBreakdown[winner].lastTrick += 100;
+          this.scores[winner] += 100;
+          const capotSeat = this.completed.every((t) => t.winner === winner) ? winner : -1;
+          if (capotSeat !== -1) {
+            this.generalBreakdown[capotSeat].capot -= 1000;
+            for (let seat = 0; seat < 4; seat++) {
+              if (seat !== capotSeat) {
+                this.generalBreakdown[seat].capot += 1000;
+                this.scores[seat] += 1000;
+              }
+            }
+            this.scores[capotSeat] -= 1000;
+            this.endReason = "Capot";
+          } else {
+            this.endReason = "General Completed";
+          }
         }
         this.finished = true;
       }

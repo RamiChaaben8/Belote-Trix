@@ -9,6 +9,7 @@ interface ScoreboardPanelProps {
   mode: string;
   selectorName: string;
   isQuickTest?: boolean;
+  liveScores?: number[];
   seats: {
     seat: number;
     name: string;
@@ -25,14 +26,18 @@ export function ScoreboardPanel({
   selectorName,
   isQuickTest,
   seats,
+  liveScores,
 }: ScoreboardPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const sorted = [...seats].sort((a, b) => a.total - b.total);
 
   return (
     <div
-      className="fixed top-14 left-2 sm:left-4 z-40 flex flex-col gap-1 p-2 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-500/30 shadow-2xl text-xs select-none transition-all"
-      style={{ width: collapsed ? "auto" : "clamp(160px, 16vw, 220px)" }}
+      className="fixed left-2 sm:left-4 z-40 flex flex-col gap-1 p-2 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-500/30 shadow-2xl text-xs select-none transition-all"
+      style={{
+        width: collapsed ? "auto" : "clamp(160px, 16vw, 220px)",
+        top: "calc(var(--nav-h, 52px) + 8px)",
+      }}
       data-testid="scoreboard-panel"
     >
       {/* Header */}
@@ -101,6 +106,22 @@ export function ScoreboardPanel({
           </div>
         ))}
       </div>
+
+      {liveScores && (
+        <div className="mt-1 pt-1 border-t border-emerald-500/20 space-y-0.5" data-testid="live-scoreboard">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">
+            LIVE ROUND SCORE
+          </div>
+          {seats.map((item) => (
+            <div key={item.seat} className="flex items-center justify-between px-1.5 py-0.5 rounded text-[11px] text-slate-300">
+              <span className="truncate">{item.name}{item.isYou ? " (You)" : ""}</span>
+              <span className={`font-mono font-bold ${(liveScores[item.seat] ?? 0) > 0 ? "text-emerald-300" : (liveScores[item.seat] ?? 0) < 0 ? "text-rose-300" : "text-slate-500"}`}>
+                {(liveScores[item.seat] ?? 0) > 0 ? "+" : ""}{liveScores[item.seat] ?? 0}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       </>
       )}
     </div>

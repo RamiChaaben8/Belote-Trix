@@ -16,6 +16,7 @@ interface Props {
   className?: string;
   style?: React.CSSProperties;
   layoutId?: string;
+  hideBottomRank?: boolean;
 }
 
 export function PlayingCard({
@@ -30,6 +31,7 @@ export function PlayingCard({
   className,
   style,
   layoutId,
+  hideBottomRank,
 }: Props) {
   const effectiveSize = small ? "sm" : size;
   const red = card && (card.suit === "H" || card.suit === "D");
@@ -99,14 +101,16 @@ export function PlayingCard({
       </div>
 
       {/* Bottom Right Rank + Suit (Inverted) */}
-      <div className="flex flex-col items-center self-end rotate-180 leading-tight">
-        <span className="font-black tracking-tighter text-sm sm:text-base md:text-lg">
-          {card.rank}
-        </span>
-        <span className="text-xs sm:text-sm md:text-base -mt-1">
-          {SUIT_SYMBOL[card.suit]}
-        </span>
-      </div>
+      {!hideBottomRank && (
+        <div className="flex flex-col items-center self-end rotate-180 leading-tight">
+          <span className="font-black tracking-tighter text-sm sm:text-base md:text-lg">
+            {card.rank}
+          </span>
+          <span className="text-xs sm:text-sm md:text-base -mt-1">
+            {SUIT_SYMBOL[card.suit]}
+          </span>
+        </div>
+      )}
     </div>
   );
 

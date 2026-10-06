@@ -34,20 +34,23 @@ export class TrickEngine {
 }
 
 export class RuleEngine {
-  static legalTrickCards(hand: Card[], trick: Play[], restricted: Suit | null, broken: boolean): Card[] {
+  static legalTrickCards(hand: Card[], trick: Play[], restricted: Suit | Suit[] | null, broken: boolean, brokenSuits?: Set<Suit>): Card[] {
+    const restrictions = restricted ? (Array.isArray(restricted) ? restricted : [restricted]) : [];
     if (trick.length > 0) {
       const led = trick[0].card.suit;
       const follow = hand.filter((c) => c.suit === led);
       return follow.length ? follow : [...hand];
     }
-    if (restricted && !broken) {
-      const free = hand.filter((c) => c.suit !== restricted);
+    if (restrictions.length > 0) {
+      const free = hand.filter((c) => !restrictions.includes(c.suit) || (brokenSuits?.has(c.suit) ?? (broken && c.suit === restrictions[0])));
       return free.length ? free : [...hand];
     }
     return [...hand];
   }
 
-  static isDiscardOfRestricted(card: Card, trick: Play[], restricted: Suit | null): boolean {
-    return !!restricted && trick.length > 0 && trick[0].card.suit !== card.suit && card.suit === restricted;
+  static isDiscardOfRestricted(card: Card, trick: Play[], restricted: Suit | Suit[] | null, brokenSuits?: Set<Suit>): boolean {
+    const restrictions = restricted ? (Array.isArray(restricted) ? restricted : [restricted]) : [];
+    return restrictions.includes(card.suit) && !brokenSuits?.has(card.suit) &&
+      trick.length > 0 && trick[0].card.suit !== card.suit;
   }
 }

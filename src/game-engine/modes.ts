@@ -3,7 +3,7 @@ import { CardData, ModeId, Move, Rank, Suit } from "@/types";
 
 export abstract class TrickMode {
   abstract readonly id: ModeId;
-  abstract readonly restrictedSuit: Suit | null;
+  abstract readonly restrictedSuit: Suit | Suit[] | null;
   /** True when capturing this mode's cards is undesirable for AI heuristics. */
   abstract readonly avoid: boolean;
   abstract cardPoints(card: CardData): number;
@@ -102,15 +102,39 @@ export class LastTrickMode extends TrickMode {
   readonly id = "LastTrick" as const;
   readonly restrictedSuit = null;
   readonly avoid = false;
-  /** No per-card points — value is entirely in winning the final trick. */
   cardPoints(_c: CardData): number {
     return 0;
   }
-  /** All intermediate tricks score 0; the engine awards the +100 after trick 8 externally. */
   trickPoints(_cards: CardData[]): number {
     return 0;
   }
-  /** Last Trick always plays all 8 tricks — no early termination. */
+  earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null {
+    return null;
+  }
+}
+
+export interface GeneralBreakdown {
+  kingHearts: number;
+  diamonds: number;
+  queens: number;
+  turns: number;
+  lastTrick: number;
+  capot: number;
+}
+
+export class GeneralMode extends TrickMode {
+  readonly id = "General" as const;
+  readonly restrictedSuit: Suit[] = ["H", "D"];
+  readonly avoid = true;
+
+  cardPoints(c: CardData): number {
+    return (c.suit === "H" && c.rank === "K" ? 150 : 0) +
+      (c.suit === "D" ? 10 : 0) +
+      (c.rank === "Q" ? 20 : 0);
+  }
+  trickPoints(cards: CardData[]): number {
+    return super.trickPoints(cards) + 10;
+  }
   earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null {
     return null;
   }
@@ -267,6 +291,7 @@ export class ModeManager {
     Queens: new QueensMode(),
     Turns: new TurnsMode(),
     LastTrick: new LastTrickMode(),
+    General: new GeneralMode(),
   };
 
   static isTrickMode(id: ModeId): boolean {

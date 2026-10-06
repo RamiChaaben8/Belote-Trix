@@ -15,7 +15,7 @@ export default function HomePage() {
   const [code, setCode] = useState("");
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("medium");
   const [gameType, setGameType] = useState<"full" | "quick">("full");
-  const [quickMode, setQuickMode] = useState<"KingOfHearts" | "Diamonds" | "Queens" | "Turns" | "LastTrick" | "Trix" | "FiftyOne">("KingOfHearts");
+  const [quickMode, setQuickMode] = useState<"KingOfHearts" | "Diamonds" | "Queens" | "Turns" | "LastTrick" | "Trix" | "General" | "FiftyOne">("KingOfHearts");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -49,7 +49,7 @@ export default function HomePage() {
       <div className="md:col-span-2">
         <h1 className="text-4xl font-extrabold text-white">Belote Trix</h1>
         <p className="mt-2 text-slate-300">
-          Four players, seven modes each. King of Hearts, Diamonds, Queens, Turns, Last Trick, Trix and Fifty One — play with friends, bots, or both.
+          Four players, eight modes each. King of Hearts, Diamonds, Queens, Turns, Last Trick, Trix, General and Fifty One — play with friends, bots, or both.
         </p>
       </div>
       <Card className="md:col-span-2">
@@ -108,6 +108,7 @@ export default function HomePage() {
                 <option value="Turns">Turns</option>
                 <option value="LastTrick">Last Trick</option>
                 <option value="Trix">Trix</option>
+                <option value="General">General</option>
                 <option value="FiftyOne">Fifty One</option>
               </select>
             </div>

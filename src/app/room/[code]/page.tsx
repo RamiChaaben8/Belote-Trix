@@ -67,11 +67,13 @@ export default function RoomPage() {
     );
   }
 
-  // Active game mode: Table takes almost full screen with integrated top-left scoreboard and top-right chat overlay
+  // Active game mode: fills the viewport (game-screen escapes the
+  // centered container via the `main:has(> .game-screen)` rule and is
+  // sized to 100dvh − navbar). Leave/notice stay as overlays.
   return (
-    <div className="relative w-full max-w-none -mx-4 -my-6 px-2 sm:px-4 flex flex-col items-center">
+    <div className="game-screen">
       {/* Floating leave & status micro bar */}
-      <div className="absolute top-2 right-28 sm:right-32 z-40 flex items-center gap-2">
+      <div className="absolute top-2 right-28 sm:right-32 z-50 flex items-center gap-2">
         <Button
           variant="ghost"
           size="sm"

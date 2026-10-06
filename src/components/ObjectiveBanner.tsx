@@ -94,6 +94,20 @@ function getBannerContent(banner: RoundFinishedPayload) {
       isCapot: false as const,
     };
   }
+  if (mode === "General") {
+    const capotWinner = (banner as RoundFinishedPayload).generalBreakdown?.findIndex((b) => b.capot === -1000) ?? -1;
+    return capotWinner >= 0
+      ? {
+          emoji: "🏆", title: "CAPOT", color: "from-amber-400 to-yellow-300",
+          glow: "rgba(251,191,36,0.95)", border: "border-yellow-400", bg: "bg-amber-950/95",
+          winnerSeat: capotWinner, baseScore: base[capotWinner], finalScore: scores[capotWinner], multiplier: capotWinner === selector ? 2 : 1, isCapot: true as const,
+        }
+      : {
+          emoji: "🌟", title: "GENERAL COMPLETED", color: "from-cyan-400 to-emerald-400",
+          glow: "rgba(45,212,191,0.85)", border: "border-emerald-400", bg: "bg-emerald-950/95",
+          winnerSeat, baseScore, finalScore, multiplier,
+        };
+  }
   if (mode === "LastTrick" || endReason === "Last Trick Won") {
     return {
       emoji: "🏆",
@@ -148,10 +162,13 @@ export function ObjectiveBanner({ banner, names, selectorSeat }: Props) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.85, y: -20 }}
           transition={{ type: "spring", stiffness: 260, damping: 22 }}
-          className="absolute inset-0 z-45 flex items-center justify-center pointer-events-none"
+          className="absolute inset-0 z-[45] flex items-center justify-center pointer-events-none"
         >
-          {/* Subtle backdrop */}
-          <div className="absolute inset-0 bg-slate-950/50 rounded-[4.5rem] sm:rounded-[6rem]" />
+          {/* Subtle backdrop — matches the felt's rounded corners */}
+          <div
+            className="absolute inset-0 bg-slate-950/50"
+            style={{ borderRadius: "clamp(1.5rem, 4.5vmin, 4.5rem)" }}
+          />
 
           {/* Banner card */}
           <motion.div

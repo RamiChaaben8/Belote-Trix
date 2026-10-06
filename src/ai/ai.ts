@@ -213,6 +213,7 @@ export function chooseMode(remaining: ModeId[], hand: Card[], difficulty: Diffic
       }
       return score;
     })(),
+    General: highCards * 1.2 + diamonds.length * 0.8 + queens * 0.8 + (hasKH ? 2 : 0),
     FiftyOne: low * 0.8,
   };
   return [...remaining].sort((a, b) => value[b] + rng() * 0.5 - (value[a] + rng() * 0.5))[0];

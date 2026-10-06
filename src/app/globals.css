@@ -32,3 +32,264 @@ body {
 .animate-red-pulse {
   animation: red-pulse 1.2s ease-in-out infinite;
 }
+
+/* ============================================================
+   GAME SCREEN — full-viewport table with CSS-grid zones
+   ============================================================
+   Zones:  "tl  top  tr"
+           "left center right"
+           "bl bottom br"
+   rows/columns are `auto minmax(0,1fr) auto`, so the center area
+   only receives the space the player zones don't use. The Trix
+   board and trick area live exclusively inside `center`.
+   ============================================================ */
+
+:root {
+  /* Overwritten at runtime by <Navbar /> via ResizeObserver. */
+  --nav-h: 52px;
+}
+
+/* The room page opts out of the centered marketing container
+   (layout.tsx wraps every page in main.max-w-6xl.px-4.py-6). */
+main:has(> .game-screen) {
+  max-width: none;
+  margin-inline: 0;
+  padding: 0;
+}
+
+.game-screen {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - var(--nav-h));
+  height: calc(100dvh - var(--nav-h));
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Decorative felt — background only, never receives pointer events.
+   The grid sits on top of it with its own padding. */
+.table-felt {
+  position: absolute;
+  inset: 0;
+  border-radius: clamp(1.5rem, 4.5vmin, 4.5rem);
+  border: clamp(7px, 1.4vmin, 16px) solid rgba(69, 26, 3, 0.95);
+  background: radial-gradient(ellipse at center, #13734a 0%, #0d5435 45%, #083722 80%, #031c11 100%);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.95), inset 0 0 90px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+.table-felt::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: inherit;
+  border: 2px solid rgba(251, 191, 36, 0.38);
+  box-shadow: inset 0 0 30px rgba(251, 191, 36, 0.16);
+}
+
+.table-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "tl top tr"
+    "left center right"
+    "bl bottom br";
+  gap: clamp(6px, 1.2vmin, 16px);
+  padding: clamp(10px, 1.6vmin, 22px);
+}
+
+.zone {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+.z-tl { grid-area: tl; }
+.z-tr {
+  grid-area: tr;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  /* clear the fixed chat toggle in the top-right corner */
+  padding-top: 44px;
+}
+.z-bl { grid-area: bl; }
+.z-br { grid-area: br; }
+
+.z-top {
+  grid-area: top;
+  z-index: 20;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+}
+.z-bottom {
+  grid-area: bottom;
+  z-index: 25;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.z-left,
+.z-right {
+  z-index: 20;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* keeps the rotated cards + their thinking-scale bleed inside the cell */
+  padding-inline: 6px;
+}
+.z-left { grid-area: left; }
+.z-right { grid-area: right; }
+
+/* Center zone — the ONLY home of the trick area and Trix lanes.
+   container-type: size enables container-query units (cqw/cqh) so the
+   Trix card size derives from this zone's own box; it also applies
+   layout containment, making it a stacking context, so cards inside
+   can never paint over the player zones. */
+.z-center {
+  grid-area: center;
+  z-index: 20;
+  position: relative;
+  overflow: visible;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* -------- Trix board sizing -------------------------------------
+   Center container-based sizing:
+     fills ~90% center width and ~95% center height with 2cqw gap.
+     Stack height = 8 slots with ~38% overlap (each next slot offset by 62% of card-h):
+       laneHeight - headerHeight = card-h * (8 * 0.62 + 0.38) = card-h * 5.34
+       --card-h = (laneHeight - headerHeight) / (8 * 0.62 + 0.38)
+       --card-w = min(var(--card-h) * 0.7, laneWidth - padding)
+------------------------------------------------------------------ */
+.trix-center {
+  position: fixed;
+  inset: var(--nav-h) 0 0;
+  width: 100vw;
+  height: calc(100dvh - var(--nav-h));
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+
+  --trix-header-h: 34px;
+  --trix-lane-gap: 12px;
+  --trix-board-w: min(82vw, 980px);
+  --trix-board-h: min(78vh, 620px);
+  --trix-lane-w: calc((var(--trix-board-w) - (3 * var(--trix-lane-gap))) / 4);
+  --trix-lane-usable-h: calc(var(--trix-board-h) - var(--trix-header-h));
+
+  --card-h: clamp(52px, 9vh, 92px);
+  /* Cap card width at lane width minus 4px padding */
+  --card-w: min(calc(var(--card-h) * 0.692), calc(var(--trix-lane-w) - 8px));
+}
+.trix-slot {
+  width: var(--card-w);
+  height: var(--card-h);
+}
+
+/* -------- Player pods (bigger avatars & text) ------------------- */
+.pod-avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 22px;
+}
+.pod-name { font-size: 12px; }
+.pod-score { font-size: 11px; }
+
+@media (min-width: 640px) {
+  .pod-avatar { width: 60px; height: 60px; font-size: 27px; }
+  .pod-name { font-size: 14px; }
+  .pod-score { font-size: 13px; }
+}
+@media (min-width: 1024px) {
+  .pod-avatar { width: 72px; height: 72px; font-size: 34px; }
+  .pod-name { font-size: 15px; }
+  .pod-score { font-size: 14px; }
+}
+/* Short viewports: shrink pods so the center keeps its space. */
+@media (max-height: 720px) {
+  .pod-avatar { width: 40px; height: 40px; font-size: 18px; }
+  .pod-name { font-size: 11px; }
+  .pod-score { font-size: 11px; }
+}
+/* Side pods: keep names from widening the side columns. */
+.z-left .pod-name,
+.z-right .pod-name {
+  max-width: 78px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------- Opponent hands ----------------------------------------
+   Sizes/overlaps live here (after @tailwind utilities, so they win
+   over PlayingCard's built-in size classes):
+     top:  cards side-by-side, each next card overlaps the previous
+           by (width − |margin-left|) visible pixels
+     side: cards rotated ±90°, layout step = height − |margin-top|  */
+.opp-card-top { width: 52px; height: 74px; }
+.opp-gap-top { margin-left: -28px; }
+
+@media (min-width: 768px) {
+  .opp-card-top { width: 64px; height: 92px; }
+  .opp-gap-top { margin-left: -32px; }
+}
+@media (max-height: 720px) {
+  .opp-card-top { width: 44px; height: 64px; }
+  .opp-gap-top { margin-left: -26px; }
+}
+
+/* Side hands: the wrapper fills the zone cell's leftover height (the pod
+   and hand share the 1fr middle row) and is itself a size container, so
+   everything derives from actual free space — no hardcoded px:
+
+     card length L  = --side-l  (≤ the zone's width budget, ≤ cqh share)
+     stack total    = L + 7 × 0.36L = 3.52L  ≤ ~85% of 100cqh
+
+   On shorter cells fewer backs are shown via nth-child — the true count
+   always remains visible in the player's own pod pill. */
+.opp-hand-side {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  container-type: size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  --side-l: min(88px, 24cqh);
+}
+.opp-card-side {
+  width: calc(var(--side-l) * 0.692);
+  height: var(--side-l);
+}
+.opp-gap-side {
+  margin-top: calc(var(--side-l) * -0.64);
+}
+
+/* ≤330px free height → 6 backs: total = 2.8L ≤ 87% of the space.
+   Note: the size override must live on DESCENDANTS — unnamed @container
+   rules never match the query container element itself. */
+@container (max-height: 330px) {
+  .opp-hand-side .opp-slot { --side-l: min(86px, 31cqh); }
+  .opp-hand-side .opp-slot:nth-child(n + 7) { display: none; }
+}
+/* ≤225px free height → 4 backs: total = 2.08L ≤ 87% of the space */
+@container (max-height: 225px) {
+  .opp-hand-side .opp-slot { --side-l: min(84px, 42cqh); }
+  .opp-hand-side .opp-slot:nth-child(n + 5) { display: none; }
+}
+
+/* Last-trick panel lives in the center corner (never under a player)
+   and only when the center is wide enough not to cover the trick. */
+.last-play { display: none; }
+@media (min-width: 640px) {
+  .last-play { display: block; }
+}

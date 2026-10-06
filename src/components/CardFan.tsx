@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { PlayingCard } from "./PlayingCard";
 import type { CardData, Move } from "@/types";
@@ -15,24 +16,29 @@ interface CardFanProps {
 }
 
 /*
- * Card size "md" is pinned to 72×104px (see PlayingCard.tsx).
+ * HOW CARD SIZE IS CALCULATED
+ * ----------------------------
+ * 1. We measure the fan container (ResizeObserver) and the viewport
+ *    height.
+ * 2. CARD_W is the smaller of a width-derived and a height-derived
+ *    size:
+ *      - width  → how big cards can be while the whole fan fits
+ *                 inside the bottom zone (see step 3);
+ *      - height → keeps the bottom zone from eating the center zone
+ *                 (the Trix lanes shrink with cqh, but tiny centers
+ *                 are unusable).
+ * 3. Spacing: xStep = min(cardW * 0.78, leftoverWidth / (n-1)).
+ *    That yields an even fan that always fits the measured width —
+ *    no card ever leaves the bottom zone.
+ * 4. Container height = CARD_H + 56 (28px rest offset top and bottom
+ *    breathing room). Hover lifts −26px, selection lifts −32px; both
+ *    stay inside the container.
  *
- * Container height budget (pixels from top of container):
- *   card top edge   =  28px  (so card bottom = 28 + 104 = 132px)
- *   container total = 160px  (card bottom 132 + 28px breathing at the bottom)
- *
- * The parent gives pb-6 (24px), so the container bottom is 24px above the
- * viewport floor — cards are always fully visible.
- *
- * Hover lift: y moves from 28 → 4 (−24px), so top edge = 4px, well inside 160px.
- * Selected lift: y moves from 28 → 0 (−28px), same.
+ * To tweak: change the size ladders below, `maxStep` (overlap
+ * tightness) or REST_Y / the +56 container budget.
  */
 
-const CARD_W = 72;   // px — matches w-[72px] in PlayingCard
-const CARD_H = 104;  // px — matches h-[104px] in PlayingCard
-const CONTAINER_H = 160;
-const BOTTOM_MARGIN = CONTAINER_H - CARD_H; // = 56px → card top rests at y=28 (centre of 56 split)
-const REST_Y = Math.floor(BOTTOM_MARGIN / 2); // = 28
+const ASPECT = 104 / 72; // PlayingCard "md": 72×104
 
 export function CardFan({
   cards,
@@ -43,7 +49,27 @@ export function CardFan({
   disabled,
   isSelectingMode,
 }: CardFanProps) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 900, h: 900 });
+
   const count = cards.length;
+
+  // Re-measure whenever the hand appears/changes size (the fan mounts
+  // with 0 cards while the deck is being dealt).
+  useEffect(() => {
+    const el = wrapRef.current;
+    const apply = () =>
+      setBox({ w: el?.clientWidth ?? 900, h: window.innerHeight || 900 });
+    apply();
+    const ro = new ResizeObserver(apply);
+    if (el) ro.observe(el);
+    window.addEventListener("resize", apply);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, [count]);
+
   if (count === 0) return null;
 
   const isCardLegal = (c: CardData): boolean => {
@@ -51,19 +77,30 @@ export function CardFan({
     return legalMoves.some((m) => m.card.suit === c.suit && m.card.rank === c.rank);
   };
 
+  // Size ladders (see header comment).
+  const byWidth =
+    box.w >= 1400 ? 112 : box.w >= 950 ? 96 : box.w >= 720 ? 84 : box.w >= 540 ? 76 : 64;
+  const byHeight =
+    box.h >= 900 ? 112 : box.h >= 780 ? 96 : box.h >= 680 ? 84 : box.h >= 560 ? 72 : 60;
+  const CARD_W = Math.min(byWidth, byHeight);
+  const CARD_H = Math.round(CARD_W * ASPECT);
+  const CONTAINER_H = CARD_H + 56;
+  const REST_Y = 28;
+
+  // Even overlap that always fits the measured width.
+  const maxStep = CARD_W * 0.70;
+  const xStep =
+    count > 1
+      ? Math.max(16, Math.min(maxStep, (box.w - 24 - CARD_W) / (count - 1)))
+      : 0;
+
   // Shallow fan: max 8° total, ~1° per card
   const totalArc = Math.min(8, count * 1.0);
   const angleStep = count > 1 ? totalArc / (count - 1) : 0;
   const startAngle = -totalArc / 2;
 
-  // Horizontal spacing: tighter with more cards
-  const xStep = count >= 7 ? 46 : count >= 5 ? 52 : 60;
-
   return (
-    <div
-      className="relative w-full max-w-4xl"
-      style={{ height: CONTAINER_H }}
-    >
+    <div ref={wrapRef} className="relative w-full" style={{ height: CONTAINER_H }}>
       {cards.map((card, idx) => {
         const rotation = startAngle + idx * angleStep;
 
@@ -108,7 +145,7 @@ export function CardFan({
               position: "absolute",
               top: 0,
               left: "50%",
-              marginLeft: -(CARD_W / 2), // -36px: horizontally centred before xOffset
+              marginLeft: -(CARD_W / 2), // horizontally centred before xOffset
               zIndex: isSelected ? 50 : idx + 1,
               transformOrigin: "bottom center",
             }}
@@ -117,6 +154,9 @@ export function CardFan({
             <PlayingCard
               card={card}
               size="md"
+              // Inline size wins over the fixed 72×104 classes so the fan
+              // scales with the measured container.
+              style={{ width: CARD_W, height: CARD_H }}
               onClick={canPlay ? () => onCardClick(card) : undefined}
               disabled={!canPlay && isMyTurn && !isSelectingMode}
               highlight={legal && isMyTurn}

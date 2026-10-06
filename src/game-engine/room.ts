@@ -206,7 +206,7 @@ export class GameRoom {
       modes: e?.modes ?? [],
       remaining: e && seat !== null ? e.remainingModes(seat) : [],
       roundNumber: e?.roundNumber ?? 0,
-      totalRounds: e?.totalRounds ?? 28,
+      totalRounds: e?.totalRounds ?? 32,
       totals: e?.totals ?? [0, 0, 0, 0],
       actor: e?.actor() ?? null,
       hand,
@@ -237,6 +237,7 @@ export class GameRoom {
                 : undefined,
               trixTable: r!.mode === "Trix" ? r!.trix?.table ?? null : null,
               trixFinishOrder: r!.mode === "Trix" ? (r!.trix?.finishOrder ?? []) : [],
+              generalBreakdown: r!.mode === "General" ? r!.generalBreakdown : undefined,
             }
           : null,
       history: (e?.results ?? []).map((x) => ({
@@ -247,6 +248,7 @@ export class GameRoom {
         base: x.base,
         multipliers: x.multipliers,
         scores: x.scores,
+        generalBreakdown: x.generalBreakdown,
       })),
       lastRoundResult: e?.results.length ? e.results[e.results.length - 1] : null,
       chat: this.chat.slice(-50),

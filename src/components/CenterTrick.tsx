@@ -99,7 +99,7 @@ export function CenterTrick({
       : { x: 0, y: 0, rotate: 0, startX: 0, startY: 0 };
 
   return (
-    <div className="relative flex items-center justify-center w-full max-w-lg h-72 sm:h-80 select-none pointer-events-none">
+    <div className="relative flex items-center justify-center w-full h-full select-none pointer-events-none">
       {/* ========================================================= */}
       {/* STATE 1: LARGE CENTER MODE SELECTION                      */}
       {/* ========================================================= */}
@@ -110,7 +110,7 @@ export function CenterTrick({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-25 bg-black/35 pointer-events-none"
+            className="fixed inset-0 z-[25] bg-black/35 pointer-events-none"
           />
 
           <motion.div
@@ -180,19 +180,18 @@ export function CenterTrick({
         /* STATE 2: ACTIVE TRICK CENTER CARDS                        */
         /* ========================================================= */
         <>
-          {/* Subtle table felt watermark ring */}
-          <div className="absolute inset-2 rounded-full border-2 border-emerald-400/10 flex items-center justify-center pointer-events-none">
-            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-emerald-300/15 flex items-center justify-center bg-emerald-950/20">
-              {mode === "FiftyOne" && fiftyTotal !== undefined ? (
-                /* FiftyOne: delegate entirely to FiftyOneCenter */
-                null
-              ) : (
-                <span className="text-emerald-400/25 font-serif text-3xl font-black tracking-widest">
-                  TRIX
-                </span>
-              )}
+          {/* Subtle table felt watermark ring — hidden in Trix mode, very low opacity in trick modes */}
+          {mode !== "Trix" && (
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 sm:w-80 sm:h-80 rounded-full border border-emerald-400/5 flex items-center justify-center pointer-events-none z-0 opacity-5">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-emerald-300/10 flex items-center justify-center bg-emerald-950/10">
+                {mode === "FiftyOne" && fiftyTotal !== undefined ? null : (
+                  <span className="text-emerald-400/20 font-serif text-3xl font-black tracking-widest">
+                    TRIX
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* FiftyOne mode — replace card trick with FiftyOneCenter */}
           {mode === "FiftyOne" && fiftyTotal !== undefined && (
@@ -224,7 +223,7 @@ export function CenterTrick({
                 initial={{ opacity: 0, y: -20, scale: 0.85 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.85 }}
-                className="absolute -top-10 sm:-top-12 z-50 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-[0_0_25px_rgba(251,191,36,0.9)] tracking-wide border-2 border-yellow-100 flex items-center gap-1.5"
+                className="absolute top-2 sm:top-3 z-50 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-[0_0_25px_rgba(251,191,36,0.9)] tracking-wide border-2 border-yellow-100 flex items-center gap-1.5"
               >
                 <span>🏆</span>
                 <span>{winnerName} wins the trick</span>
@@ -235,9 +234,9 @@ export function CenterTrick({
           {/* Turns mode: tricks-won tracker panel */}
           {mode === "Turns" && trickCounts && names && (
             <motion.div
-              initial={{ opacity: 0, x: 40 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="absolute -right-2 sm:right-0 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-1 px-2.5 py-2 rounded-xl bg-slate-950/95 border border-teal-500/40 shadow-xl text-[11px] min-w-[110px]"
+              initial={{ opacity: 0, x: 40, y: "-50%" }}
+              animate={{ opacity: 1, x: 0, y: "-50%" }}
+              className="absolute right-1 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-1 px-2.5 py-2 rounded-xl bg-slate-950/95 border border-teal-500/40 shadow-xl text-[11px] min-w-[110px]"
             >
               <div className="text-[10px] font-black uppercase tracking-widest text-teal-400 mb-0.5 text-center">
                 Tricks Won

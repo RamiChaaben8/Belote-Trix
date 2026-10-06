@@ -6,6 +6,15 @@ import { useSettings } from "@/hooks/useSettings";
 import { playSound } from "@/lib/sound";
 import type { CardData, GameType, ModeId, Move } from "@/types";
 
+export interface GeneralBreakdown {
+  kingHearts: number;
+  diamonds: number;
+  queens: number;
+  turns: number;
+  lastTrick: number;
+  capot: number;
+}
+
 export interface SeatView {
   seat: number;
   name: string;
@@ -73,6 +82,7 @@ export interface RoomView {
       S: { low: number; high: number } | null;
     } | null;
     trixFinishOrder?: number[];
+    generalBreakdown?: GeneralBreakdown[];
   } | null;
   thinkingSeats?: number[];
   history: {
@@ -83,6 +93,7 @@ export interface RoomView {
     base: number[];
     multipliers: number[];
     scores: number[];
+    generalBreakdown?: GeneralBreakdown[];
   }[];
   lastRoundResult: {
     number: number;
@@ -117,6 +128,7 @@ export interface RoundFinishedPayload {
   base: number[];
   multipliers: number[];
   scores: number[];
+  generalBreakdown?: GeneralBreakdown[];
 }
 
 export function useRoom(code: string) {

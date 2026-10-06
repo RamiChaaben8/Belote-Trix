@@ -17,6 +17,7 @@ export interface RoundResult {
   multipliers: number[];
   /** Final points (base x multiplier). */
   scores: number[];
+  generalBreakdown?: import("./modes").GeneralBreakdown[];
   round: RoundManager;
 }
 
@@ -105,7 +106,7 @@ export class GameEngine {
     const r = this.round!;
     const before = [...this.totals];
     const base = [...r.scores];
-    const isCapot = r.endReason === "Capot";
+    const isCapot = r.endReason === "Capot" && r.mode !== "General";
     // Capot bypasses the selector multiplier — fixed -100/+100 values stand as-is.
     const multipliers = isCapot
       ? Array(this.players.length).fill(1)
@@ -115,11 +116,19 @@ export class GameEngine {
       : ScoreManager.applyMultiplier(base, this.selector);
     this.totals = ScoreManager.add(this.totals, finalScores);
     const endReason = r.endReason;
-    this.results.push({ number: this.roundNumber, mode: r.mode, selector: this.selector, endReason, base, multipliers, scores: finalScores, round: r });
+    this.results.push({
+      number: this.roundNumber, mode: r.mode, selector: this.selector, endReason, base,
+      multipliers, scores: finalScores, round: r,
+      generalBreakdown: r.mode === "General" ? r.generalBreakdown.map((b) => ({ ...b })) : undefined,
+    });
     const events: EngineEvent[] = [
       {
         type: "round_finished",
-        data: { roundNumber: this.roundNumber, mode: r.mode, selector: this.selector, endReason, base, multipliers, scores: finalScores },
+        data: {
+          roundNumber: this.roundNumber, mode: r.mode, selector: this.selector, endReason,
+          base, multipliers, scores: finalScores,
+          generalBreakdown: r.mode === "General" ? r.generalBreakdown : undefined,
+        },
       },
       { type: "score_updated", data: { totals: this.totals, deltas: this.totals.map((t, i) => t - before[i]) } },
     ];
@@ -161,14 +170,14 @@ export class GameEngine {
       }
       for (const t of res.round.completed) {
         stats[t.winner].tricksWon++;
-        if (res.mode === "Turns") stats[t.winner].turnsTricksWon++;
+        if (res.mode === "Turns" || res.mode === "General") stats[t.winner].turnsTricksWon++;
         for (const p of t.plays) {
-          if (res.mode === "Diamonds" && p.card.suit === "D") stats[t.winner].diamonds++;
-          if (res.mode === "Queens" && p.card.rank === "Q") stats[t.winner].queens++;
-          if (res.mode === "KingOfHearts" && p.card.suit === "H" && p.card.rank === "K") stats[t.winner].kingHearts++;
+          if ((res.mode === "Diamonds" || res.mode === "General") && p.card.suit === "D") stats[t.winner].diamonds++;
+          if ((res.mode === "Queens" || res.mode === "General") && p.card.rank === "Q") stats[t.winner].queens++;
+          if ((res.mode === "KingOfHearts" || res.mode === "General") && p.card.suit === "H" && p.card.rank === "K") stats[t.winner].kingHearts++;
         }
       }
-      if (res.mode === "LastTrick" && res.round.completed.length === 8) {
+      if ((res.mode === "LastTrick" || res.mode === "General") && res.round.completed.length === 8) {
         const lastTrickWinner = res.round.completed[7].winner;
         stats[lastTrickWinner].lastTrickWins++;
       }

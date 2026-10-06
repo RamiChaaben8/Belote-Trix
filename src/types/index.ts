@@ -2,8 +2,8 @@ export const SUITS = ["H", "D", "C", "S"] as const;
 export type Suit = (typeof SUITS)[number];
 export const RANKS = ["7", "8", "9", "10", "J", "Q", "K", "A"] as const;
 export type Rank = (typeof RANKS)[number];
-export type ModeId = "KingOfHearts" | "Diamonds" | "Queens" | "Turns" | "LastTrick" | "Trix" | "FiftyOne";
-export const MODE_IDS: ModeId[] = ["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "FiftyOne"];
+export type ModeId = "KingOfHearts" | "Diamonds" | "Queens" | "Turns" | "LastTrick" | "Trix" | "General" | "FiftyOne";
+export const MODE_IDS: ModeId[] = ["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "General", "FiftyOne"];
 export type Difficulty = "easy" | "medium" | "hard";
 export type GameType = "full" | "quick";
 

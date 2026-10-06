@@ -61,7 +61,8 @@ export function ChatPanel({ chat, onSend, onlineCount = 4 }: ChatPanelProps) {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? "Close chat" : "Open chat"}
-        className="fixed top-[70px] right-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 text-slate-200 border border-amber-500/30 backdrop-blur-md shadow-lg transition-colors"
+        className="fixed right-3 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 hover:bg-slate-800 text-slate-200 border border-amber-500/30 backdrop-blur-md shadow-lg transition-colors"
+        style={{ top: "calc(var(--nav-h, 52px) + 14px)" }}
       >
         <span className="text-sm leading-none">💬</span>
         <span className="text-xs font-bold hidden sm:inline">Chat</span>
@@ -108,7 +109,7 @@ export function ChatPanel({ chat, onSend, onlineCount = 4 }: ChatPanelProps) {
             transition={{ type: "tween", duration: 0.25, ease: "easeInOut" }}
             className="fixed z-[55] flex flex-col rounded-l-2xl border border-amber-500/30 bg-slate-950/97 backdrop-blur-xl shadow-2xl overflow-hidden"
             style={{
-              top: 70,
+              top: "calc(var(--nav-h, 52px) + 14px)",
               right: 0,
               width: "min(320px, 92vw)",
               height: "min(500px, 70vh)",

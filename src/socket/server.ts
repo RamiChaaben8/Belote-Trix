@@ -23,7 +23,7 @@ const moveSchema = z.object({
   aceValue: z.union([z.literal(1), z.literal(11)]).optional(),
   trixPass: z.boolean().optional(),
 });
-const modeSchema = z.enum(["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "FiftyOne"]);
+const modeSchema = z.enum(["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "General", "FiftyOne"]);
 const difficultySchema = z.enum(["easy", "medium", "hard"]);
 const gameTypeSchema = z.enum(["full", "quick"]);
 

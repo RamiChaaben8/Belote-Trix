@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Button } from "./ui/button";
 import { MODE_LABEL } from "@/lib/utils";
+import type { GeneralBreakdown } from "@/hooks/useRoom";
 
 interface RoundSummaryModalProps {
   roundNumber: number;
@@ -13,6 +14,7 @@ interface RoundSummaryModalProps {
   baseScores: number[];
   multipliers: number[];
   finalScores: number[];
+  generalBreakdown?: GeneralBreakdown[];
   onContinue: () => void;
 }
 
@@ -25,6 +27,7 @@ export function RoundSummaryModal({
   baseScores,
   multipliers,
   finalScores,
+  generalBreakdown,
   onContinue,
 }: RoundSummaryModalProps) {
   // Pick an emoji for the end reason
@@ -38,13 +41,19 @@ export function RoundSummaryModal({
     : "✅";
 
   const isTurns = mode === "Turns";
+  const isGeneral = mode === "General";
+  const generalCapotWinner = isGeneral
+    ? (generalBreakdown ?? []).findIndex((b) => b.capot === -1000)
+    : -1;
   const isCapot = endReason === "Capot";
   const isLastTrick = mode === "LastTrick";
   const isTrix = mode === "Trix";
 
   // In Capot the scores are -100/+100 (not trick×10), so derive trick counts separately:
   // the Capot winner is the seat with score === -100; they won 8 tricks, others 0.
-  const capotWinnerSeat = isCapot ? finalScores.findIndex((s) => s === -100) : -1;
+  const capotWinnerSeat = isCapot
+    ? (isGeneral ? generalCapotWinner : finalScores.findIndex((s) => s === -100))
+    : -1;
 
   // Trix: 1st place has base -100, 2nd has base -50
   const trixFirst = isTrix ? baseScores.findIndex((b) => b === -100) : -1;
@@ -116,6 +125,38 @@ export function RoundSummaryModal({
             </p>
           )}
         </div>
+
+        {isGeneral && generalBreakdown && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-5">
+            {players.map((p, idx) => {
+              const b = generalBreakdown[idx] ?? { kingHearts: 0, diamonds: 0, queens: 0, turns: 0, lastTrick: 0, capot: 0 };
+              const items = [
+                ["King Hearts", b.kingHearts],
+                ["Diamonds", b.diamonds],
+                ["Queens", b.queens],
+                ["Turns", b.turns],
+                ["Last Trick", b.lastTrick],
+                ["Capot", b.capot],
+              ].filter(([, value]) => value !== 0);
+              return (
+                <div key={p.seat} className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+                  <div className="font-bold text-white mb-1">{p.avatar} {p.name}</div>
+                  <div className="space-y-0.5 text-xs">
+                    {items.map(([label, value]) => (
+                      <div key={label} className="flex justify-between text-slate-300">
+                        <span>{label}</span><span className={Number(value) < 0 ? "text-rose-300" : "text-emerald-300"}>{Number(value) > 0 ? "+" : ""}{value}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t border-slate-800 mt-1 pt-1 font-bold text-white">
+                      <span>Multiplier x{multipliers[idx] ?? 1}</span>
+                      <span>{finalScores[idx] > 0 ? "+" : ""}{finalScores[idx] ?? 0}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Breakdown Table */}
         <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 mb-6">

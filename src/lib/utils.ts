@@ -13,6 +13,7 @@ export const MODE_LABEL: Record<string, string> = {
   Turns: "Turns",
   LastTrick: "Last Trick",
   Trix: "Trix",
+  General: "General",
   FiftyOne: "Fifty One",
 };
 export const MODE_HELP: Record<string, string> = {
@@ -22,5 +23,6 @@ export const MODE_HELP: Record<string, string> = {
   Turns: "+10 per trick won. All 8 tricks are always played.",
   LastTrick: "+100 to the winner of the final (8th) trick only.",
   Trix: "Get rid of your cards first! 1st: -100, 2nd: -50. J♣ starts. Aces give an extra turn.",
+  General: "All classic trick objectives combined: K♥, diamonds, queens, turns and the last trick.",
   FiftyOne: "Reach exactly 51 for +510. J reverses, 9 passes, A is 1 or 11.",
 };
