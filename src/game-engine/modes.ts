@@ -300,6 +300,19 @@ export class SwitchMode extends TrickMode {
   earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null { return null; }
 }
 
+/**
+ * StarMode is a meta-mode: it replays any previously-completed mode (including Switch)
+ * with an extra ×2 Star multiplier applied to all seats on top of the normal selector ×2.
+ * When replaying Switch, the Star ×2 stacks with the Switch ×2 (selector gets ×8 total).
+ */
+export class StarMode extends TrickMode {
+  readonly id = "Star" as const;
+  readonly restrictedSuit = null;
+  readonly avoid = false;
+  cardPoints(_c: CardData): number { return 0; }
+  earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null { return null; }
+}
+
 export class ModeManager {
   private static trickModes: Record<Exclude<ModeId, "FiftyOne" | "Trix">, TrickMode> = {
     KingOfHearts: new KingOfHeartsMode(),
@@ -309,6 +322,7 @@ export class ModeManager {
     LastTrick: new LastTrickMode(),
     General: new GeneralMode(),
     Switch: new SwitchMode(),
+    Star: new StarMode(),
   } as Record<Exclude<ModeId, "FiftyOne" | "Trix">, TrickMode>;
 
   static isTrickMode(id: ModeId): boolean {
@@ -323,23 +337,44 @@ export class ModeManager {
   }
 
   /**
-   * Returns true when Switch can be selected by this seat.
-   * Switch requires that at least one mode has been completed by ANY player
-   * (i.e., the global used list has at least one entry).
+   * Returns true when Switch can be selected.
+   * Requires at least one completed non-Switch, non-Star mode.
    */
   static switchAvailable(allUsed: ModeId[][]): boolean {
-    return allUsed.some((u) => u.some((m) => m !== "Switch"));
+    return allUsed.some((u) => u.some((m) => m !== "Switch" && m !== "Star"));
   }
 
   /**
-   * The set of modes that have been completed by at least one player
-   * and can be selected as the sub-mode for Switch.
+   * Returns true when Star can be selected.
+   * Requires at least one completed mode (any mode, including Switch).
+   */
+  static starAvailable(allUsed: ModeId[][]): boolean {
+    return allUsed.some((u) => u.some((m) => m !== "Star"));
+  }
+
+  /**
+   * The set of modes completed by at least one player, usable as Switch sub-modes.
+   * Excludes Switch and Star themselves.
    */
   static completedModes(allUsed: ModeId[][]): ModeId[] {
     const seen = new Set<ModeId>();
     for (const used of allUsed) {
       for (const m of used) {
-        if (m !== "Switch") seen.add(m);
+        if (m !== "Switch" && m !== "Star") seen.add(m);
+      }
+    }
+    return [...seen];
+  }
+
+  /**
+   * The set of modes completed by at least one player, usable as Star sub-modes.
+   * Excludes Star itself (but includes Switch so Star can replay Switch).
+   */
+  static completedModesForStar(allUsed: ModeId[][]): ModeId[] {
+    const seen = new Set<ModeId>();
+    for (const used of allUsed) {
+      for (const m of used) {
+        if (m !== "Star") seen.add(m);
       }
     }
     return [...seen];

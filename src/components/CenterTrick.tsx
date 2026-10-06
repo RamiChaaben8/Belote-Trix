@@ -19,6 +19,12 @@ interface CenterTrickProps {
   remainingModes: ModeId[];
   onSelectMode: (mode: ModeId) => void;
 
+  // Star sub-mode picker
+  starPhase?: "sub_select" | null;
+  starCompletedModes?: string[];
+  onSelectStarSubMode?: (mode: string) => void;
+  starSubMode?: string | null;
+
   // Switch multi-step wizard
   switchPhase?: "sub_select" | "target_select" | "reveal" | "playing" | null;
   completedModes?: string[];
@@ -56,6 +62,10 @@ export function CenterTrick({
   selectorName,
   remainingModes,
   onSelectMode,
+  starPhase,
+  starCompletedModes = [],
+  onSelectStarSubMode,
+  starSubMode,
   switchPhase,
   completedModes = [],
   onSelectSwitchSubMode,
@@ -109,14 +119,73 @@ export function CenterTrick({
   const showSwitchSubPicker = switchPhase === "sub_select";
   const showSwitchTargetPicker = switchPhase === "target_select";
   const showSwitchWizard = showSwitchSubPicker || showSwitchTargetPicker;
+  const showStarWizard = starPhase === "sub_select";
 
   return (
     <div className="relative flex items-center justify-center w-full h-full select-none pointer-events-none">
 
       {/* ============================================================ */}
-      {/* SWITCH WIZARD — Steps 2 & 3                                  */}
+      {/* STAR WIZARD — sub-mode picker                               */}
       {/* ============================================================ */}
-      {showSwitchWizard ? (
+      {showStarWizard ? (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[25] bg-black/35 pointer-events-none"
+          />
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            className="relative z-30 pointer-events-auto flex flex-col items-center justify-center p-5 sm:p-7 rounded-3xl bg-slate-950/98 border-2 border-yellow-400/60 shadow-[0_20px_50px_rgba(0,0,0,0.9)] max-w-sm sm:max-w-md text-center"
+          >
+            <div className="flex items-center gap-2 mb-1 text-yellow-300 font-black text-base sm:text-lg">
+              <span className="text-xl">⭐</span>
+              <span>Star — Pick a Mode to Replay</span>
+            </div>
+            <p className="text-xs text-yellow-200/70 font-semibold mb-4">
+              {isCurrentUserSelector
+                ? "Choose any completed mode to replay with a ×2 Star bonus!"
+                : `${selectorName} is choosing which mode to replay…`}
+            </p>
+            {isCurrentUserSelector ? (
+              <div className="grid grid-cols-2 gap-3 w-full">
+                {starCompletedModes.map((m) => (
+                  <motion.button
+                    key={m}
+                    whileHover={{ scale: 1.06, y: -2 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => onSelectStarSubMode?.(m)}
+                    className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 text-white shadow-xl transition-all ${
+                      m === "Switch"
+                        ? "bg-gradient-to-b from-cyan-900/80 to-slate-900 hover:from-cyan-800/90 hover:to-blue-900/90 border-cyan-500/60 hover:border-cyan-400"
+                        : "bg-gradient-to-b from-yellow-950/60 to-slate-900 hover:from-yellow-900/80 hover:to-amber-900/80 border-yellow-700/50 hover:border-yellow-400"
+                    }`}
+                  >
+                    <span className="font-extrabold text-sm sm:text-base">
+                      {m === "Switch" ? "🔄 " : ""}{MODE_LABEL[m] ?? m}
+                    </span>
+                    <span className="text-[10px] text-yellow-300/80 font-mono mt-1">⭐ ×2 Star bonus</span>
+                  </motion.button>
+                ))}
+                {starCompletedModes.length === 0 && (
+                  <div className="col-span-2 py-4 text-slate-500 text-sm italic">
+                    No completed modes yet.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-4 text-center">
+                <div className="text-3xl mb-2 animate-spin">⭐</div>
+                <p className="text-slate-400 text-sm">Waiting for {selectorName}…</p>
+              </div>
+            )}
+          </motion.div>
+        </>
+      ) : showSwitchWizard ? (
         <>
           <motion.div
             initial={{ opacity: 0 }}
@@ -257,11 +326,13 @@ export function CenterTrick({
                       className={`flex flex-col items-center justify-center p-3.5 rounded-2xl border-2 text-white shadow-xl transition-all ${
                         m === "Switch"
                           ? "bg-gradient-to-b from-cyan-900/80 to-slate-900 hover:from-cyan-800/90 hover:to-blue-900/90 border-cyan-500/60 hover:border-cyan-400"
+                          : m === "Star"
+                          ? "bg-gradient-to-b from-yellow-950/60 to-slate-900 hover:from-yellow-900/80 hover:to-amber-900/80 border-yellow-600/50 hover:border-yellow-400"
                           : "bg-gradient-to-b from-slate-800 to-slate-900 hover:from-purple-900/90 hover:to-indigo-900/90 border-slate-700 hover:border-purple-400"
                       }`}
                     >
                       <span className="font-extrabold text-sm sm:text-base">
-                        {m === "Switch" ? "🔄 " : ""}{MODE_LABEL[m]}
+                        {m === "Switch" ? "🔄 " : m === "Star" ? "⭐ " : ""}{MODE_LABEL[m]}
                       </span>
                       <span className="text-[10px] text-amber-300/90 font-mono mt-1">
                         {m === "KingOfHearts"
@@ -278,7 +349,13 @@ export function CenterTrick({
                           ? "1st: -100 · 2nd: -50"
                           : m === "Switch"
                           ? "All scores ×2 + swap hands!"
-                          : "+510 (x2=1020)"}
+                          : m === "Star"
+                          ? "Replay any mode with ×2 bonus!"
+                          : m === "General"
+                          ? "All objectives combined"
+                          : m === "FiftyOne"
+                          ? "Reach 51 for +510"
+                          : MODE_LABEL[m] ?? m}
                       </span>
                     </motion.button>
                   ))}

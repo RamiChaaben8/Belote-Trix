@@ -2,8 +2,29 @@ export const SUITS = ["H", "D", "C", "S"] as const;
 export type Suit = (typeof SUITS)[number];
 export const RANKS = ["7", "8", "9", "10", "J", "Q", "K", "A"] as const;
 export type Rank = (typeof RANKS)[number];
-export type ModeId = "KingOfHearts" | "Diamonds" | "Queens" | "Turns" | "LastTrick" | "Trix" | "General" | "FiftyOne" | "Switch";
-export const MODE_IDS: ModeId[] = ["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "General", "FiftyOne", "Switch"];
+export type ModeId =
+  | "KingOfHearts"
+  | "Diamonds"
+  | "Queens"
+  | "Turns"
+  | "LastTrick"
+  | "Trix"
+  | "General"
+  | "Switch"
+  | "Star"
+  | "FiftyOne";
+export const MODE_IDS: ModeId[] = [
+  "KingOfHearts",
+  "Diamonds",
+  "Queens",
+  "Turns",
+  "LastTrick",
+  "Trix",
+  "General",
+  "Switch",
+  "Star",
+  "FiftyOne",
+];
 export type Difficulty = "easy" | "medium" | "hard";
 export type GameType = "full" | "quick";
 
@@ -61,4 +82,13 @@ export interface SwitchState {
   preSwapHands: CardData[][] | null;
   /** Seconds remaining in the reveal countdown. */
   revealCountdown: number;
+}
+
+/** State held by the engine during a Star-mode round. */
+export interface StarState {
+  /**
+   * The mode the selector chose to replay under Star.
+   * null until the selector picks in the star_sub phase.
+   */
+  subMode: ModeId | null;
 }

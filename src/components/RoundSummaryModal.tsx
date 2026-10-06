@@ -15,6 +15,7 @@ interface RoundSummaryModalProps {
   multipliers: number[];
   finalScores: number[];
   generalBreakdown?: GeneralBreakdown[];
+  starSubMode?: string;
   switchSubMode?: string;
   switchSwaps?: [[number, number], [number, number]];
   onContinue: () => void;
@@ -30,6 +31,7 @@ export function RoundSummaryModal({
   multipliers,
   finalScores,
   generalBreakdown,
+  starSubMode,
   switchSubMode,
   switchSwaps,
   onContinue,
@@ -47,6 +49,7 @@ export function RoundSummaryModal({
   const isTurns = mode === "Turns";
   const isGeneral = mode === "General";
   const isSwitch = mode === "Switch";
+  const isStar = mode === "Star";
   const generalCapotWinner = isGeneral
     ? (generalBreakdown ?? []).findIndex((b) => b.capot === -1000)
     : -1;
@@ -119,6 +122,17 @@ export function RoundSummaryModal({
               <span>{endReason}</span>
             </div>
           ) : null}
+
+          {/* Star badge */}
+          {isStar && (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-yellow-950/80 border border-yellow-400/60 text-yellow-300 font-black text-sm">
+              <span>⭐</span>
+              <span>STAR MODE</span>
+              {starSubMode && (
+                <span className="text-amber-300">— {MODE_LABEL[starSubMode] ?? starSubMode}</span>
+              )}
+            </div>
+          )}
 
           {/* Switch badge */}
           {isSwitch && (

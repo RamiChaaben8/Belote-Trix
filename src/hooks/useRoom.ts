@@ -34,7 +34,7 @@ export interface RoomView {
   you: number | null;
   seats: (SeatView | null)[];
   spectators: number;
-  phase: "lobby" | "selecting" | "switch_sub" | "switch_target" | "switch_reveal" | "playing" | "finished";
+  phase: "lobby" | "selecting" | "star_sub" | "switch_sub" | "switch_target" | "switch_reveal" | "playing" | "finished";
   selector: number | null;
   used: string[][];
   modes: string[];
@@ -58,6 +58,8 @@ export interface RoomView {
     turnsTricksWon: number;
     lastTrickWins: number;
     trixWins: number;
+    switchWins: number;
+    starWins: number;
   }[] | null;
   round: {
     mode: string;
@@ -94,6 +96,7 @@ export interface RoomView {
     multipliers: number[];
     scores: number[];
     generalBreakdown?: GeneralBreakdown[];
+    starSubMode?: string;
     switchSubMode?: string;
     switchSwaps?: [[number, number], [number, number]];
   }[];
@@ -105,10 +108,15 @@ export interface RoomView {
     base: number[];
     multipliers: number[];
     scores: number[];
+    starSubMode?: string;
     switchSubMode?: string;
     switchSwaps?: [[number, number], [number, number]];
   } | null;
   completedModes: string[];
+  starState: {
+    subMode: string | null;
+    completedModes: string[];
+  } | null;
   switchState: {
     phase: "sub_select" | "target_select" | "reveal" | "playing" | null;
     subMode: string | null;
@@ -143,6 +151,7 @@ export interface RoundFinishedPayload {
   multipliers: number[];
   scores: number[];
   generalBreakdown?: GeneralBreakdown[];
+  starSubMode?: string;
   switchSubMode?: string;
   switchSwaps?: [[number, number], [number, number]];
 }

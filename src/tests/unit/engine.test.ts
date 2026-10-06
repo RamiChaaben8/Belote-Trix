@@ -133,10 +133,18 @@ function playFullGame(difficulty: Difficulty, seed: number): GameEngine {
   while (e.phase !== "finished" && guard++ < 10000) {
     if (e.phase === "selecting") {
       const seat = e.selector;
-      // Bots never pick Switch (mirrors players.ts behaviour)
-      const pool = e.remainingModes(seat).filter((m) => m !== "Switch");
+      // Bots never pick Switch or Star (mirrors players.ts behaviour)
+      const pool = e.remainingModes(seat).filter((m) => m !== "Switch" && m !== "Star");
       const mode = pool.length > 0 ? chooseMode(pool, e.handOf(seat), difficulty, rng) : e.remainingModes(seat)[0];
       e.selectMode(seat, mode);
+    } else if (e.phase === "star_sub") {
+      const completed = ModeManager.completedModesForStar(e.used);
+      // Bots never pick Switch as Star sub-mode
+      const pool = completed.filter((m) => m !== "Switch");
+      const pick = pool.length > 0
+        ? pool[Math.floor(rng() * pool.length)]
+        : completed[Math.floor(rng() * completed.length)];
+      e.selectStarSubMode(e.selector, pick);
     } else if (e.phase === "switch_sub") {
       const completed = ModeManager.completedModes(e.used);
       const pick = completed[Math.floor(rng() * completed.length)];
@@ -159,16 +167,16 @@ function playFullGame(difficulty: Difficulty, seed: number): GameEngine {
 
 describe("GameEngine full matches", () => {
   for (const diff of ["easy", "medium", "hard"] as Difficulty[]) {
-    it(`completes 36 rounds with ${diff} bots`, () => {
+    it(`completes 40 rounds with ${diff} bots`, () => {
       for (let seed = 1; seed <= 5; seed++) {
         const e = playFullGame(diff, seed);
         expect(e.phase).toBe("finished");
-        expect(e.results).toHaveLength(36);
+        expect(e.results).toHaveLength(40);
         for (let s = 0; s < 4; s++) expect([...e.used[s]].sort()).toEqual([...MODE_IDS].sort() as ModeId[]);
       }
     });
   }
-  it("each non-FiftyOne round distributes its full base points and multiplies selector by 2", () => {
+  it("each non-FiftyOne round distributes its full base points and multiplies selector correctly", () => {
     const e = playFullGame("medium", 42);
     for (const r of e.results) {
       const baseSum = r.base.reduce((a, b) => a + b, 0);
@@ -183,9 +191,12 @@ describe("GameEngine full matches", () => {
       if (r.mode === "General" && r.endReason !== "Capot") expect(baseSum).toBe(490);
       // Trix: 1st gets -100, 2nd gets -50, others 0 → sum = -150
       if (r.mode === "Trix") expect(baseSum).toBe(-150);
-      // Selector score is doubled (x2 for non-Switch; x4 for Switch; except Capot which bypasses multiplier)
+      // Selector score: x2 base, x4 for Switch, x4 for Star, x8 for Star(Switch)
+      // (except Capot which bypasses all multipliers)
       if (r.endReason !== "Capot") {
-        const expectedMultiplier = r.mode === "Switch" ? 4 : 2;
+        const isStar = r.mode === "Star";
+        const isSwitch = r.mode === "Switch" || r.starSubMode === "Switch";
+        const expectedMultiplier = (isStar ? 2 : 1) * (isSwitch ? 2 : 1) * 2; // selector always x2
         expect(r.scores[r.selector]).toBe(r.base[r.selector] * expectedMultiplier);
       }
     }

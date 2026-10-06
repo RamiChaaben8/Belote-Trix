@@ -87,7 +87,7 @@ export function Table({
   // Block card plays while the round-summary modal OR the objective banner is showing.
   const modalOpen = (room.gameType !== "quick" && roundFinished !== null) || roundBanner !== null;
   const myTurn = !modalOpen && room.you !== null && room.actor === room.you;
-  const isSelector = !modalOpen && (room.phase === "selecting" || room.phase === "switch_sub" || room.phase === "switch_target") && room.selector === room.you;
+  const isSelector = !modalOpen && (room.phase === "selecting" || room.phase === "star_sub" || room.phase === "switch_sub" || room.phase === "switch_target") && room.selector === room.you;
 
   // PASS button is enabled only when the player has no legal move,
   // OR when every legal move is an Ace (the Ace exception).
@@ -302,11 +302,15 @@ export function Table({
         <div className="zone z-center">
           <div className="absolute inset-0 z-[1] flex items-center justify-center">
             <CenterTrick
-              isSelectingMode={!modalOpen && room.phase === "selecting"}
+              isSelectingMode={!modalOpen && (room.phase === "selecting" || room.phase === "star_sub")}
               isCurrentUserSelector={isSelector}
               selectorName={room.selector !== null ? name(room.selector) : ""}
               remainingModes={(room.remaining as ModeId[]) ?? []}
               onSelectMode={(m) => void act("select_mode", { mode: m })}
+              starPhase={room.phase === "star_sub" ? "sub_select" : null}
+              starCompletedModes={(room.starState?.completedModes ?? []) as ModeId[]}
+              onSelectStarSubMode={(m) => void act("star_sub_mode", { subMode: m })}
+              starSubMode={room.starState?.subMode ?? null}
               switchPhase={room.switchState?.phase}
               completedModes={(room.completedModes ?? []) as ModeId[]}
               onSelectSwitchSubMode={(m) => void act("switch_sub_mode", { subMode: m })}
@@ -525,6 +529,7 @@ export function Table({
           multipliers={roundFinished.multipliers}
           finalScores={roundFinished.scores}
           generalBreakdown={roundFinished.generalBreakdown}
+          starSubMode={roundFinished.starSubMode}
           switchSubMode={roundFinished.switchSubMode}
           switchSwaps={roundFinished.switchSwaps}
           onContinue={onRoundDismissed}

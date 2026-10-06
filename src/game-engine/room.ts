@@ -129,6 +129,11 @@ export class GameRoom {
     return this.engine!.selectMode(seat, mode);
   }
 
+  selectStarSubMode(clientId: string, subMode: ModeId): EngineEvent[] {
+    const seat = this.requireSeat(clientId);
+    return this.engine!.selectStarSubMode(seat, subMode);
+  }
+
   selectSwitchSubMode(clientId: string, subMode: ModeId): EngineEvent[] {
     const seat = this.requireSeat(clientId);
     return this.engine!.selectSwitchSubMode(seat, subMode);
@@ -156,7 +161,23 @@ export class GameRoom {
     const e = this.engine;
     if (!e) return [];
 
-    // Switch sub-mode selection (step 2)
+    // Star sub-mode selection
+    if (e.phase === "star_sub" && e.selector !== null) {
+      const seat = e.selector;
+      const p = this.seats[seat]!;
+      const isAuto = p.isBot || (!p.connected && p.disconnectedAt !== null);
+      if (!isAuto) return [];
+      const completed = ModeManager.completedModesForStar(e.used);
+      if (completed.length === 0) return [];
+      // Bots never pick Switch as the Star sub-mode (too complex)
+      const pool = completed.filter((m) => m !== "Switch");
+      const pick = pool.length > 0
+        ? pool[Math.floor(this.rng() * pool.length)]
+        : completed[Math.floor(this.rng() * completed.length)];
+      return e.selectStarSubMode(seat, pick);
+    }
+
+    // Switch sub-mode selection (standalone or inside Star)
     if (e.phase === "switch_sub" && e.selector !== null) {
       const seat = e.selector;
       const p = this.seats[seat]!;
@@ -168,7 +189,7 @@ export class GameRoom {
       return e.selectSwitchSubMode(seat, pick);
     }
 
-    // Switch target selection (step 3)
+    // Switch target selection
     if (e.phase === "switch_target" && e.selector !== null) {
       const seat = e.selector;
       const p = this.seats[seat]!;
@@ -179,8 +200,7 @@ export class GameRoom {
       return e.selectSwitchTarget(seat, target);
     }
 
-    // Switch reveal countdown — drain synchronously (used in tests and when running
-    // without a real socket timer, e.g. bot-only rooms or reconnect scenarios).
+    // Switch reveal countdown — drain synchronously (no real timer in tests / bot rooms)
     if (e.phase === "switch_reveal") {
       const allEvents: EngineEvent[] = [];
       while (e.phase === "switch_reveal") {
@@ -203,10 +223,8 @@ export class GameRoom {
   actorIsAuto(graceMs: number): boolean {
     const e = this.engine;
     if (!e) return false;
-    // During reveal, nobody acts
     if (e.phase === "switch_reveal") return false;
-    // During switch sub/target selection, only the selector acts
-    if (e.phase === "switch_sub" || e.phase === "switch_target") {
+    if (e.phase === "star_sub" || e.phase === "switch_sub" || e.phase === "switch_target") {
       const seat = e.selector;
       const p = this.seats[seat]!;
       if (p.isBot) return true;
@@ -239,11 +257,28 @@ export class GameRoom {
     const e = this.engine;
     const seat = this.seatOf(clientId);
     const r = e?.round ?? null;
-    const showRound = !!r && (e!.phase === "playing" || e!.phase === "selecting" || e!.phase === "switch_sub" || e!.phase === "switch_target" || e!.phase === "switch_reveal");
+    const inMetaPhase =
+      e?.phase === "selecting" ||
+      e?.phase === "star_sub" ||
+      e?.phase === "switch_sub" ||
+      e?.phase === "switch_target" ||
+      e?.phase === "switch_reveal";
+    const showRound = !!r && (e!.phase === "playing" || inMetaPhase);
     const hand = e && seat !== null ? [...e.handOf(seat)].sort(sortCards) : [];
-    const legal = e && seat !== null && e.phase === "playing" && r && !r.finished && r.turn === seat ? r.legalMoves(seat) : [];
+    const legal = e && seat !== null && e.phase === "playing" && r && !r.finished && r.turn === seat
+      ? r.legalMoves(seat)
+      : [];
 
-    // Build Switch-specific view
+    // Star view
+    const starState = e?.starState ?? null;
+    const starView = starState
+      ? {
+          subMode: starState.subMode,
+          completedModes: ModeManager.completedModesForStar(e!.used),
+        }
+      : null;
+
+    // Switch view (may be nested inside Star)
     const ss = e?.switchState ?? null;
     const completedModes = e ? ModeManager.completedModes(e.used) : [];
     const switchView = ss
@@ -280,21 +315,20 @@ export class GameRoom {
       remaining: e && seat !== null ? e.remainingModes(seat) : [],
       completedModes,
       roundNumber: e?.roundNumber ?? 0,
-      totalRounds: e?.totalRounds ?? 36,
+      totalRounds: e?.totalRounds ?? 40,
       totals: e?.totals ?? [0, 0, 0, 0],
       actor: e?.actor() ?? null,
       hand,
       legal,
       handCounts: e
-        ? [0, 1, 2, 3].map((s) =>
-            e.phase === "selecting" || e.phase === "switch_sub" || e.phase === "switch_target" || e.phase === "switch_reveal"
-              ? 8
-              : r ? r.hands[s].length : 8,
+        ? [0, 1, 2, 3].map(() =>
+            inMetaPhase ? 8 : r ? r.hands[0].length : 8,
           )
         : [0, 0, 0, 0],
       dealer: e ? (e.roundNumber > 0 ? (e.roundNumber - 1) % 4 : 0) : null,
       leader: r ? r.leader : null,
       stats: e ? e.stats() : null,
+      starState: starView,
       switchState: switchView,
       round:
         showRound && e!.phase === "playing"
@@ -330,6 +364,7 @@ export class GameRoom {
         multipliers: x.multipliers,
         scores: x.scores,
         generalBreakdown: x.generalBreakdown,
+        starSubMode: x.starSubMode,
         switchSubMode: x.switchSubMode,
         switchSwaps: x.switchSwaps,
       })),
@@ -344,6 +379,7 @@ export class GameRoom {
               base: x.base,
               multipliers: x.multipliers,
               scores: x.scores,
+              starSubMode: x.starSubMode,
               switchSubMode: x.switchSubMode,
               switchSwaps: x.switchSwaps,
             };
@@ -353,4 +389,3 @@ export class GameRoom {
     };
   }
 }
-

@@ -3,9 +3,16 @@ import { Player } from "./players";
 import { RoundManager } from "./round";
 import { ScoreManager } from "./score";
 import { ModeManager } from "./modes";
-import { EngineEvent, GameType, MODE_IDS, ModeId, Move, SwitchState } from "@/types";
+import { EngineEvent, GameType, MODE_IDS, ModeId, Move, StarState, SwitchState } from "@/types";
 
-export type Phase = "selecting" | "switch_sub" | "switch_target" | "switch_reveal" | "playing" | "finished";
+export type Phase =
+  | "selecting"
+  | "star_sub"
+  | "switch_sub"
+  | "switch_target"
+  | "switch_reveal"
+  | "playing"
+  | "finished";
 
 export interface RoundResult {
   number: number;
@@ -13,14 +20,16 @@ export interface RoundResult {
   selector: number;
   /** Human-readable reason the round ended (e.g. "King of Hearts Captured"). */
   endReason: string | null;
-  /** Raw points before the selector multiplier. */
+  /** Raw points before any multiplier. */
   base: number[];
   multipliers: number[];
-  /** Final points (base x multiplier). */
+  /** Final points (base × multipliers). */
   scores: number[];
   generalBreakdown?: import("./modes").GeneralBreakdown[];
   round: RoundManager;
-  /** Switch: the underlying sub-mode (only set when mode === "Switch"). */
+  /** Star: the sub-mode replayed under Star. */
+  starSubMode?: ModeId;
+  /** Switch: the underlying sub-mode (set when mode === "Switch" or starSubMode === "Switch"). */
   switchSubMode?: ModeId;
   /** Switch: swap pairs [[selectorSeat, targetSeat], [otherA, otherB]] */
   switchSwaps?: [[number, number], [number, number]];
@@ -37,6 +46,7 @@ export interface PlayerStats {
   lastTrickWins: number;
   trixWins: number;
   switchWins: number;
+  starWins: number;
 }
 
 export class GameEngine {
@@ -52,8 +62,12 @@ export class GameEngine {
   readonly gameType: GameType;
   readonly quickMode: ModeId | null;
 
-  /** Active Switch state (non-null during Switch selection / reveal flow). */
+  /** Active Star state — non-null for the whole duration of a Star round. */
+  starState: StarState | null = null;
+  /** Active Switch state — non-null during Switch selection / reveal flow (may be nested inside Star). */
   switchState: SwitchState | null = null;
+  /** Countdown interval handle (set during Switch reveal countdown). */
+  private revealTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     readonly players: Player[],
@@ -74,10 +88,10 @@ export class GameEngine {
     if (this.gameType === "quick" && this.quickMode) {
       return this.used[seat].includes(this.quickMode) ? [] : [this.quickMode];
     }
-    // Switch is unavailable in the first rotation (no completed modes yet)
     return this.modes.filter((m) => {
       if (this.used[seat].includes(m)) return false;
       if (m === "Switch" && !ModeManager.switchAvailable(this.used)) return false;
+      if (m === "Star" && !ModeManager.starAvailable(this.used)) return false;
       return true;
     });
   }
@@ -85,7 +99,7 @@ export class GameEngine {
   /** Shuffles and deals 8 cards each; for quick test, auto-selects mode immediately or waits for selector. */
   start(): EngineEvent[] {
     const events = this.deal();
-    if (this.gameType === "quick" && this.quickMode && this.quickMode !== "Switch") {
+    if (this.gameType === "quick" && this.quickMode && this.quickMode !== "Switch" && this.quickMode !== "Star") {
       events.push(...this.selectMode(this.selector, this.quickMode));
     }
     return events;
@@ -95,6 +109,7 @@ export class GameEngine {
     this.pendingHands = new Deck().shuffle(this.rng).deal(4, 8);
     this.phase = "selecting";
     this.round = null;
+    this.starState = null;
     this.switchState = null;
     return [{ type: "deal_cards", data: { roundNumber: this.roundNumber + 1, selector: this.selector } }];
   }
@@ -103,6 +118,17 @@ export class GameEngine {
     if (this.phase !== "selecting") throw new Error("Not in selection phase");
     if (seat !== this.selector) throw new Error("You are not the selector");
     if (!this.remainingModes(seat).includes(mode)) throw new Error("Mode unavailable");
+
+    if (mode === "Star") {
+      if (!ModeManager.starAvailable(this.used)) {
+        throw new Error("Star requires at least one completed mode");
+      }
+      this.used[seat].push(mode);
+      this.roundNumber++;
+      this.phase = "star_sub";
+      this.starState = { subMode: null };
+      return [{ type: "mode_selected", data: { seat, mode, roundNumber: this.roundNumber } }];
+    }
 
     if (mode === "Switch") {
       if (!ModeManager.switchAvailable(this.used)) {
@@ -129,13 +155,53 @@ export class GameEngine {
     return [{ type: "mode_selected", data: { seat, mode, roundNumber: this.roundNumber } }];
   }
 
+  // ─── Star sub-mode selection ────────────────────────────────────────────────
+
   /**
-   * Switch Step 2: selector picks which already-completed mode to replay.
+   * Star Step 2: selector picks which already-completed mode to replay under Star.
+   * The chosen mode may be Switch — in that case, we immediately transition to
+   * switch_sub so the selector also picks the Switch sub-mode.
+   */
+  selectStarSubMode(seat: number, subMode: ModeId): EngineEvent[] {
+    if (this.phase !== "star_sub") throw new Error("Not in Star sub-mode selection");
+    if (seat !== this.selector) throw new Error("You are not the selector");
+    if (subMode === "Star") throw new Error("Cannot select Star as the Star sub-mode");
+    const completed = ModeManager.completedModesForStar(this.used);
+    if (!completed.includes(subMode)) throw new Error("Mode has not been completed yet");
+
+    this.starState!.subMode = subMode;
+    const events: EngineEvent[] = [{ type: "star_sub_selected", data: { seat, subMode } }];
+
+    if (subMode === "Switch") {
+      // Star wrapping Switch: now go through the Switch multi-step flow
+      this.phase = "switch_sub";
+      this.switchState = {
+        phase: "sub_select",
+        subMode: null,
+        swapTarget: null,
+        otherPair: null,
+        preSwapHands: null,
+        revealCountdown: 10,
+      };
+    } else {
+      // Plain sub-mode: start playing immediately
+      this.round = new RoundManager(subMode, this.pendingHands, this.selector);
+      this.phase = "playing";
+    }
+    return events;
+  }
+
+  // ─── Switch sub-mode / target / reveal ──────────────────────────────────────
+
+  /**
+   * Switch Step 2: selector picks which already-completed mode to replay under Switch.
+   * (Also used when Switch is nested inside Star.)
    */
   selectSwitchSubMode(seat: number, subMode: ModeId): EngineEvent[] {
     if (this.phase !== "switch_sub") throw new Error("Not in Switch sub-mode selection");
     if (seat !== this.selector) throw new Error("You are not the selector");
-    if (subMode === "Switch") throw new Error("Cannot select Switch as the sub-mode");
+    if (subMode === "Switch") throw new Error("Cannot select Switch as the Switch sub-mode");
+    if (subMode === "Star") throw new Error("Cannot select Star as the Switch sub-mode");
     const completed = ModeManager.completedModes(this.used);
     if (!completed.includes(subMode)) throw new Error("Mode has not been completed yet");
     this.switchState!.subMode = subMode;
@@ -144,9 +210,7 @@ export class GameEngine {
     return [{ type: "switch_sub_selected", data: { seat, subMode } }];
   }
 
-  /**
-   * Switch Step 3: selector picks which player to swap hands with.
-   */
+  /** Switch Step 3: selector picks which player to swap hands with. */
   selectSwitchTarget(seat: number, target: number): EngineEvent[] {
     if (this.phase !== "switch_target") throw new Error("Not in Switch target selection");
     if (seat !== this.selector) throw new Error("You are not the selector");
@@ -175,8 +239,8 @@ export class GameEngine {
   }
 
   /**
-   * Called every second during the reveal countdown. Decrements counter and
-   * fires switch_countdown event. When it hits 0, completes the swap and starts play.
+   * Called every second during the reveal countdown.
+   * When it hits 0, performs the swap and starts play.
    */
   tickRevealCountdown(): EngineEvent[] {
     if (this.phase !== "switch_reveal" || !this.switchState) return [];
@@ -184,25 +248,19 @@ export class GameEngine {
     if (this.switchState.revealCountdown > 0) {
       return [{ type: "switch_countdown", data: { remaining: this.switchState.revealCountdown } }];
     }
-    // Countdown done: perform swap and start play
     return this.executeSwapAndStart();
   }
 
-  /**
-   * Performs the hand swap and starts the underlying mode round.
-   */
   private executeSwapAndStart(): EngineEvent[] {
     const ss = this.switchState!;
     const selector = this.selector;
     const target = ss.swapTarget!;
     const [otherA, otherB] = ss.otherPair!;
 
-    // Swap selector ↔ target
     const tmp = this.pendingHands[selector];
     this.pendingHands[selector] = this.pendingHands[target];
     this.pendingHands[target] = tmp;
 
-    // Swap otherA ↔ otherB
     const tmp2 = this.pendingHands[otherA];
     this.pendingHands[otherA] = this.pendingHands[otherB];
     this.pendingHands[otherB] = tmp2;
@@ -215,14 +273,12 @@ export class GameEngine {
     return [
       {
         type: "switch_swap_complete",
-        data: {
-          selectorSwap: [selector, target],
-          otherSwap: [otherA, otherB],
-          subMode,
-        },
+        data: { selectorSwap: [selector, target], otherSwap: [otherA, otherB], subMode },
       },
     ];
   }
+
+  // ─── Play ────────────────────────────────────────────────────────────────────
 
   play(seat: number, move: Move): EngineEvent[] {
     if (this.phase !== "playing" || !this.round) throw new Error("No round in progress");
@@ -231,22 +287,34 @@ export class GameEngine {
     return events;
   }
 
+  // ─── Finish round ────────────────────────────────────────────────────────────
+
   private finishRound(): EngineEvent[] {
     const r = this.round!;
     const before = [...this.totals];
     const base = [...r.scores];
+
+    const isStar = !!this.starState;
     const isSwitch = !!this.switchState;
     const isCapot = r.endReason === "Capot" && r.mode !== "General";
-    // Capot bypasses the selector multiplier — fixed -100/+100 values stand as-is.
+
+    // Capot bypasses selector and all meta multipliers — fixed ±100 stand as-is.
     const multipliers = isCapot
       ? Array(this.players.length).fill(1)
-      : ScoreManager.multipliers(this.selector, this.players.length, isSwitch);
+      : ScoreManager.multipliers(this.selector, this.players.length, isSwitch, isStar);
     const finalScores = isCapot
       ? [...base]
-      : ScoreManager.applyMultiplier(base, this.selector, isSwitch);
+      : ScoreManager.applyMultiplier(base, this.selector, isSwitch, isStar);
+
     this.totals = ScoreManager.add(this.totals, finalScores);
     const endReason = r.endReason;
-    const resultMode: ModeId = isSwitch ? "Switch" : r.mode;
+
+    // Determine the canonical result mode name
+    let resultMode: ModeId;
+    if (isStar) resultMode = "Star";
+    else if (isSwitch) resultMode = "Switch";
+    else resultMode = r.mode;
+
     const result: RoundResult = {
       number: this.roundNumber,
       mode: resultMode,
@@ -258,6 +326,10 @@ export class GameEngine {
       round: r,
       generalBreakdown: r.mode === "General" ? r.generalBreakdown.map((b) => ({ ...b })) : undefined,
     };
+
+    if (isStar && this.starState) {
+      result.starSubMode = this.starState.subMode ?? undefined;
+    }
     if (isSwitch && this.switchState) {
       result.switchSubMode = this.switchState.subMode ?? undefined;
       const ss = this.switchState;
@@ -265,7 +337,9 @@ export class GameEngine {
         result.switchSwaps = [[this.selector, ss.swapTarget], ss.otherPair];
       }
     }
+
     this.results.push(result);
+
     const events: EngineEvent[] = [
       {
         type: "round_finished",
@@ -278,13 +352,17 @@ export class GameEngine {
           multipliers,
           scores: finalScores,
           generalBreakdown: r.mode === "General" ? r.generalBreakdown : undefined,
+          starSubMode: result.starSubMode,
           switchSubMode: result.switchSubMode,
           switchSwaps: result.switchSwaps,
         },
       },
       { type: "score_updated", data: { totals: this.totals, deltas: this.totals.map((t, i) => t - before[i]) } },
     ];
+
+    this.starState = null;
     this.switchState = null;
+
     if (this.gameType === "quick" || this.roundNumber >= this.totalRounds) {
       this.phase = "finished";
       events.push({ type: "game_finished", data: { totals: this.totals, winners: ScoreManager.winners(this.totals) } });
@@ -296,27 +374,28 @@ export class GameEngine {
       events.push({ type: "game_finished", data: { totals: this.totals, winners: ScoreManager.winners(this.totals) } });
     } else {
       events.push(...this.deal());
-      this.round = r; // keep finished round visible until the selector picks a mode
+      this.round = r;
     }
     return events;
   }
 
-  /** Per-seat statistics over all finished rounds. */
+  // ─── Stats ───────────────────────────────────────────────────────────────────
+
   stats(): PlayerStats[] {
     const stats: PlayerStats[] = this.players.map(() => ({
       modesWon: 0, tricksWon: 0, diamonds: 0, queens: 0, kingHearts: 0,
-      fiftyOneWins: 0, turnsTricksWon: 0, lastTrickWins: 0, trixWins: 0, switchWins: 0,
+      fiftyOneWins: 0, turnsTricksWon: 0, lastTrickWins: 0, trixWins: 0,
+      switchWins: 0, starWins: 0,
     }));
     for (const res of this.results) {
       const min = Math.min(...res.scores);
-      res.scores.forEach((s, seat) => {
-        if (s === min) stats[seat].modesWon++;
-      });
-      const playMode = res.switchSubMode ?? res.mode;
+      res.scores.forEach((s, seat) => { if (s === min) stats[seat].modesWon++; });
+
+      // Resolve the actual card-playing mode for stat attribution
+      const playMode = res.switchSubMode ?? res.starSubMode ?? res.mode;
+
       if (playMode === "FiftyOne") {
-        res.base.forEach((b, seat) => {
-          if (b > 0) stats[seat].fiftyOneWins++;
-        });
+        res.base.forEach((b, seat) => { if (b > 0) stats[seat].fiftyOneWins++; });
         continue;
       }
       if (playMode === "Trix") {
@@ -328,6 +407,10 @@ export class GameEngine {
         const switchMin = Math.min(...res.scores);
         res.scores.forEach((s, seat) => { if (s === switchMin) stats[seat].switchWins++; });
       }
+      if (res.mode === "Star") {
+        const starMin = Math.min(...res.scores);
+        res.scores.forEach((s, seat) => { if (s === starMin) stats[seat].starWins++; });
+      }
       for (const t of res.round.completed) {
         stats[t.winner].tricksWon++;
         if (playMode === "Turns" || playMode === "General") stats[t.winner].turnsTricksWon++;
@@ -338,26 +421,31 @@ export class GameEngine {
         }
       }
       if ((playMode === "LastTrick" || playMode === "General") && res.round.completed.length === 8) {
-        const lastTrickWinner = res.round.completed[7].winner;
-        stats[lastTrickWinner].lastTrickWins++;
+        stats[res.round.completed[7].winner].lastTrickWins++;
       }
     }
     return stats;
   }
 
-  /** Seat expected to act, or null when the game is finished. */
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+
   actor(): number | null {
-    if (this.phase === "selecting" || this.phase === "switch_sub" || this.phase === "switch_target") return this.selector;
-    if (this.phase === "switch_reveal") return null; // nobody acts during countdown
+    if (
+      this.phase === "selecting" ||
+      this.phase === "star_sub" ||
+      this.phase === "switch_sub" ||
+      this.phase === "switch_target"
+    ) return this.selector;
+    if (this.phase === "switch_reveal") return null;
     if (this.phase === "playing" && this.round && !this.round.finished) return this.round.turn;
     return null;
   }
 
-  /** Cards visible to a seat (null seat means spectator: nothing visible). */
   handOf(seat: number | null): Card[] {
     if (seat === null) return [];
     if (
       this.phase === "selecting" ||
+      this.phase === "star_sub" ||
       this.phase === "switch_sub" ||
       this.phase === "switch_target" ||
       this.phase === "switch_reveal"

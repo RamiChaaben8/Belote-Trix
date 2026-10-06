@@ -119,6 +119,9 @@ export function RoomLobby({ room, act }: { room: RoomView; act: Act }) {
                   <option value="Turns">Turns</option>
                   <option value="LastTrick">Last Trick</option>
                   <option value="Trix">Trix</option>
+                  <option value="General">General</option>
+                  <option value="Switch">Switch</option>
+                  <option value="Star">⭐ Star</option>
                   <option value="FiftyOne">Fifty One</option>
                 </select>
               </div>
