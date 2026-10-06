@@ -23,7 +23,7 @@ const moveSchema = z.object({
   aceValue: z.union([z.literal(1), z.literal(11)]).optional(),
   trixPass: z.boolean().optional(),
 });
-const modeSchema = z.enum(["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "General", "FiftyOne"]);
+const modeSchema = z.enum(["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "General", "FiftyOne", "Switch"]);
 const difficultySchema = z.enum(["easy", "medium", "hard"]);
 const gameTypeSchema = z.enum(["full", "quick"]);
 
@@ -88,7 +88,7 @@ export function attachSocketServer(httpServer: HttpServer): Server {
     }
 
     const isFifty = e.phase === "playing" && e.round?.mode === "FiftyOne";
-    const isSelectingPhase = e.phase === "selecting";
+    const isSelectingPhase = e.phase === "selecting" || e.phase === "switch_sub" || e.phase === "switch_target";
 
     let delay: number;
     if (humanAbsent) {
@@ -336,6 +336,40 @@ export function attachSocketServer(httpServer: HttpServer): Server {
         emitEvents(r, r.selectMode(clientId, d.mode));
         await broadcast(r);
         schedule(r);
+      }),
+    );
+
+    socket.on(
+      "switch_sub_mode",
+      guard(z.object({ subMode: modeSchema }), async (d, room) => {
+        const r = requireRoom(room);
+        const events = r.selectSwitchSubMode(clientId, d.subMode as ModeId);
+        emitEvents(r, events);
+        await broadcast(r);
+        schedule(r);
+      }),
+    );
+
+    socket.on(
+      "switch_target",
+      guard(z.object({ target: z.number().int().min(0).max(3) }), async (d, room) => {
+        const r = requireRoom(room);
+        const events = r.selectSwitchTarget(clientId, d.target);
+        emitEvents(r, events);
+        // Start 10-second reveal countdown
+        if (r.revealInterval) clearInterval(r.revealInterval);
+        r.revealInterval = setInterval(async () => {
+          if (!r.engine) return;
+          const tickEvents = r.engine.tickRevealCountdown();
+          emitEvents(r, tickEvents);
+          await broadcast(r);
+          if (tickEvents.some((e) => e.type === "switch_swap_complete")) {
+            clearInterval(r.revealInterval!);
+            r.revealInterval = null;
+            schedule(r);
+          }
+        }, 1000);
+        await broadcast(r);
       }),
     );
 

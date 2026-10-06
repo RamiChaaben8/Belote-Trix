@@ -15,6 +15,8 @@ interface RoundSummaryModalProps {
   multipliers: number[];
   finalScores: number[];
   generalBreakdown?: GeneralBreakdown[];
+  switchSubMode?: string;
+  switchSwaps?: [[number, number], [number, number]];
   onContinue: () => void;
 }
 
@@ -28,6 +30,8 @@ export function RoundSummaryModal({
   multipliers,
   finalScores,
   generalBreakdown,
+  switchSubMode,
+  switchSwaps,
   onContinue,
 }: RoundSummaryModalProps) {
   // Pick an emoji for the end reason
@@ -42,6 +46,7 @@ export function RoundSummaryModal({
 
   const isTurns = mode === "Turns";
   const isGeneral = mode === "General";
+  const isSwitch = mode === "Switch";
   const generalCapotWinner = isGeneral
     ? (generalBreakdown ?? []).findIndex((b) => b.capot === -1000)
     : -1;
@@ -115,9 +120,38 @@ export function RoundSummaryModal({
             </div>
           ) : null}
 
+          {/* Switch badge */}
+          {isSwitch && (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-400/60 text-cyan-300 font-black text-sm">
+              <span>🔄</span>
+              <span>SWITCH MODE</span>
+              {switchSubMode && (
+                <span className="text-amber-300">— {MODE_LABEL[switchSubMode] ?? switchSubMode}</span>
+              )}
+            </div>
+          )}
+
+          {/* Switch swap pairs */}
+          {isSwitch && switchSwaps && (
+            <div className="mt-2 text-xs text-slate-400 space-y-0.5">
+              <div className="font-bold text-slate-300 mb-1">Hand Swaps:</div>
+              {switchSwaps.map(([a, b], i) => (
+                <div key={i} className="font-mono text-slate-300">
+                  {players[a]?.name ?? `Seat ${a + 1}`}
+                  <span className="text-cyan-400 mx-1">↔</span>
+                  {players[b]?.name ?? `Seat ${b + 1}`}
+                </div>
+              ))}
+            </div>
+          )}
+
           {isCapot ? (
             <p className="text-xs text-amber-400/80 mt-2 font-semibold">
               Capot overrides all scoring — no multiplier applies.
+            </p>
+          ) : isSwitch ? (
+            <p className="text-xs text-cyan-400/80 mt-2 font-semibold">
+              Switch doubles all scores (×2 bonus). Selector ({players[selectorSeat]?.name}) gets <b>×4 total</b>!
             </p>
           ) : (
             <p className="text-xs text-slate-400 mt-2">

@@ -13,6 +13,8 @@ import { RoundSummaryModal } from "@/components/RoundSummaryModal";
 import { FinalResultsModal } from "@/components/FinalResultsModal";
 import { LastPlayPanel } from "@/components/LastPlayPanel";
 import { ObjectiveBanner } from "@/components/ObjectiveBanner";
+import { SwitchRevealOverlay } from "@/components/SwitchRevealOverlay";
+import { SwitchSwapAnimation } from "@/components/SwitchSwapAnimation";
 import type { LastTrickItem } from "@/components/LastPlayPanel";
 import type { LastTrick, RoomView, ChatEntry, RoundFinishedPayload } from "@/hooks/useRoom";
 import type { CardData, Move, ModeId } from "@/types";
@@ -50,6 +52,8 @@ export function Table({
   gameId,
   trixExtraTurnSeat,
   onTrixPass,
+  switchCountdown,
+  switchSwapAnimating = false,
 }: {
   room: RoomView;
   lastTrick: LastTrick | null;
@@ -66,6 +70,8 @@ export function Table({
   chat?: ChatEntry[];
   act: Act;
   gameId: string | null;
+  switchCountdown?: number | null;
+  switchSwapAnimating?: boolean;
 }) {
   const me = room.you ?? 0;
   const rel = (seat: number) => (seat - me + 4) % 4;
@@ -81,7 +87,7 @@ export function Table({
   // Block card plays while the round-summary modal OR the objective banner is showing.
   const modalOpen = (room.gameType !== "quick" && roundFinished !== null) || roundBanner !== null;
   const myTurn = !modalOpen && room.you !== null && room.actor === room.you;
-  const isSelector = !modalOpen && room.phase === "selecting" && room.selector === room.you;
+  const isSelector = !modalOpen && (room.phase === "selecting" || room.phase === "switch_sub" || room.phase === "switch_target") && room.selector === room.you;
 
   // PASS button is enabled only when the player has no legal move,
   // OR when every legal move is an Ace (the Ace exception).
@@ -274,6 +280,15 @@ export function Table({
               </span>
             </div>
           )}
+          {/* Switch mode indicator */}
+          {room.phase === "playing" && room.history.some((h) => h.number === room.roundNumber && h.mode === "Switch") && (
+            <div className="flex flex-col items-end gap-0.5">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/90 border border-cyan-400/60 shadow-[0_0_12px_rgba(34,211,238,0.4)]">
+                <span className="text-cyan-300 font-black text-[11px]">🔄 SWITCH MODE</span>
+              </div>
+              <span className="text-[9px] text-cyan-400/70 font-mono px-1">×2 all · selector ×4</span>
+            </div>
+          )}
         </div>
 
         {/* LEFT player */}
@@ -292,6 +307,14 @@ export function Table({
               selectorName={room.selector !== null ? name(room.selector) : ""}
               remainingModes={(room.remaining as ModeId[]) ?? []}
               onSelectMode={(m) => void act("select_mode", { mode: m })}
+              switchPhase={room.switchState?.phase}
+              completedModes={(room.completedModes ?? []) as ModeId[]}
+              onSelectSwitchSubMode={(m) => void act("switch_sub_mode", { subMode: m })}
+              switchSubMode={room.switchState?.subMode}
+              onSelectSwitchTarget={(target) => void act("switch_target", { target })}
+              seatNames={[0, 1, 2, 3].map((s) => name(s))}
+              seatAvatars={[0, 1, 2, 3].map((s) => room.seats[s]?.avatar ?? "🙂")}
+              youSeatForSwitch={me}
               plays={currentMode === "Trix" ? [] : centerPlays}
               youSeat={me}
               winnerSeat={winningSeat}
@@ -442,6 +465,46 @@ export function Table({
       )}
 
       {/* ======================================================== */}
+      {/* SWITCH REVEAL OVERLAY                                     */}
+      {/* Shown during the 10-second countdown before hand swap.   */}
+      {/* ======================================================== */}
+      {room.phase === "switch_reveal" &&
+        room.switchState &&
+        room.switchState.swapTarget !== null &&
+        room.switchState.otherPair !== null &&
+        room.you !== null &&
+        room.switchState.currentHand && (
+          <SwitchRevealOverlay
+            countdown={switchCountdown ?? room.switchState.revealCountdown}
+            selectorSeat={room.selector ?? 0}
+            swapTarget={room.switchState.swapTarget}
+            otherPair={room.switchState.otherPair}
+            currentHand={room.switchState.currentHand as CardData[]}
+            seatNames={[0, 1, 2, 3].map((s) => name(s))}
+            seatAvatars={[0, 1, 2, 3].map((s) => room.seats[s]?.avatar ?? "🙂")}
+            youSeat={me}
+          />
+        )}
+
+      {/* ======================================================== */}
+      {/* SWITCH SWAP ANIMATION                                     */}
+      {/* 2.5-second animation after countdown ends.               */}
+      {/* ======================================================== */}
+      {switchSwapAnimating &&
+        room.lastRoundResult &&
+        room.lastRoundResult.mode === "Switch" &&
+        room.lastRoundResult.switchSwaps && (
+          <SwitchSwapAnimation
+            selectorSeat={room.selector ?? 0}
+            swapTarget={room.lastRoundResult.switchSwaps[0][1]}
+            otherPair={room.lastRoundResult.switchSwaps[1]}
+            seatNames={[0, 1, 2, 3].map((s) => name(s))}
+            seatAvatars={[0, 1, 2, 3].map((s) => room.seats[s]?.avatar ?? "🙂")}
+            subMode={room.lastRoundResult.switchSubMode ?? ""}
+          />
+        )}
+
+      {/* ======================================================== */}
       {/* ROUND SUMMARY MODAL                                       */}
       {/* Driven by the raw round_finished socket event.           */}
       {/* Stays open regardless of what phase the server has moved  */}
@@ -462,6 +525,8 @@ export function Table({
           multipliers={roundFinished.multipliers}
           finalScores={roundFinished.scores}
           generalBreakdown={roundFinished.generalBreakdown}
+          switchSubMode={roundFinished.switchSubMode}
+          switchSwaps={roundFinished.switchSwaps}
           onContinue={onRoundDismissed}
         />
       )}

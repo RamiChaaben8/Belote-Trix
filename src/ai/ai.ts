@@ -215,8 +215,13 @@ export function chooseMode(remaining: ModeId[], hand: Card[], difficulty: Diffic
     })(),
     General: highCards * 1.2 + diamonds.length * 0.8 + queens * 0.8 + (hasKH ? 2 : 0),
     FiftyOne: low * 0.8,
+    // Switch: bots avoid picking Switch directly (handled via autoAct in room.ts)
+    Switch: 0,
   };
-  return [...remaining].sort((a, b) => value[b] + rng() * 0.5 - (value[a] + rng() * 0.5))[0];
+  // Filter out Switch from bot value-based selection (bot handles it via autoAct)
+  const eligible = remaining.filter((m) => m !== "Switch");
+  const pool = eligible.length > 0 ? eligible : remaining;
+  return [...pool].sort((a, b) => value[b] + rng() * 0.5 - (value[a] + rng() * 0.5))[0];
 }
 
 export type { CardData };

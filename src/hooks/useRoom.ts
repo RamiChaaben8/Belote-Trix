@@ -34,7 +34,7 @@ export interface RoomView {
   you: number | null;
   seats: (SeatView | null)[];
   spectators: number;
-  phase: "lobby" | "selecting" | "playing" | "finished";
+  phase: "lobby" | "selecting" | "switch_sub" | "switch_target" | "switch_reveal" | "playing" | "finished";
   selector: number | null;
   used: string[][];
   modes: string[];
@@ -94,6 +94,8 @@ export interface RoomView {
     multipliers: number[];
     scores: number[];
     generalBreakdown?: GeneralBreakdown[];
+    switchSubMode?: string;
+    switchSwaps?: [[number, number], [number, number]];
   }[];
   lastRoundResult: {
     number: number;
@@ -103,6 +105,18 @@ export interface RoomView {
     base: number[];
     multipliers: number[];
     scores: number[];
+    switchSubMode?: string;
+    switchSwaps?: [[number, number], [number, number]];
+  } | null;
+  completedModes: string[];
+  switchState: {
+    phase: "sub_select" | "target_select" | "reveal" | "playing" | null;
+    subMode: string | null;
+    swapTarget: number | null;
+    otherPair: [number, number] | null;
+    revealCountdown: number;
+    preSwapHands: { suit: string; rank: string }[][] | null;
+    currentHand: { suit: string; rank: string }[] | null;
   } | null;
   chat: ChatEntry[];
 }
@@ -129,6 +143,8 @@ export interface RoundFinishedPayload {
   multipliers: number[];
   scores: number[];
   generalBreakdown?: GeneralBreakdown[];
+  switchSubMode?: string;
+  switchSwaps?: [[number, number], [number, number]];
 }
 
 export function useRoom(code: string) {
@@ -147,6 +163,8 @@ export function useRoom(code: string) {
   const [gameId, setGameId] = useState<string | null>(null);
   /** Trix: seat that just got an Ace extra-turn (shown briefly as a banner). */
   const [trixExtraTurnSeat, setTrixExtraTurnSeat] = useState<number | null>(null);
+  const [switchCountdown, setSwitchCountdown] = useState<number | null>(null);
+  const [switchSwapAnimating, setSwitchSwapAnimating] = useState(false);
   const yourSeat = useRef<number | null>(null);
 
   useEffect(() => {
@@ -207,6 +225,15 @@ export function useRoom(code: string) {
       setTimeout(() => setTrixExtraTurnSeat(null), 2000);
     };
 
+    const onSwitchCountdown = (d: { remaining: number }) => {
+      setSwitchCountdown(d.remaining);
+    };
+    const onSwitchSwapComplete = () => {
+      setSwitchCountdown(null);
+      setSwitchSwapAnimating(true);
+      setTimeout(() => setSwitchSwapAnimating(false), 2500);
+    };
+
     s.on("connect", join);
     s.on("disconnect", () => setConnected(false));
     s.on("room_state", onState);
@@ -221,6 +248,8 @@ export function useRoom(code: string) {
     s.on("player_disconnected", onDisc);
     s.on("player_reconnected", onRecon);
     s.on("trix_extra_turn", onTrixExtra);
+    s.on("switch_countdown", onSwitchCountdown);
+    s.on("switch_swap_complete", onSwitchSwapComplete);
     if (s.connected) void join();
     return () => {
       clearTimeout(trickTimer);
@@ -238,6 +267,8 @@ export function useRoom(code: string) {
       s.off("player_disconnected", onDisc);
       s.off("player_reconnected", onRecon);
       s.off("trix_extra_turn", onTrixExtra);
+      s.off("switch_countdown", onSwitchCountdown);
+      s.off("switch_swap_complete", onSwitchSwapComplete);
     };
   }, [code]);
 
@@ -250,5 +281,5 @@ export function useRoom(code: string) {
     return res;
   }, []);
 
-  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, act };
+  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, switchCountdown, switchSwapAnimating, act };
 }

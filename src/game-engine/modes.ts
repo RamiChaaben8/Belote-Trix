@@ -284,6 +284,22 @@ export class FiftyOneMode {
   }
 }
 
+/**
+ * SwitchMode is a meta-mode: it delegates to any already-completed mode
+ * but with ALL players' hands swapped (selector ↔ target, other two ↔ each other)
+ * and scores doubled (x2 Switch bonus on top of x2 selector bonus = x4 for selector).
+ *
+ * The actual card-scoring logic is provided by the sub-mode TrickMode instance.
+ * SwitchMode itself just acts as a TrickMode wrapper that is resolved during engine setup.
+ */
+export class SwitchMode extends TrickMode {
+  readonly id = "Switch" as const;
+  readonly restrictedSuit = null;
+  readonly avoid = false;
+  cardPoints(_c: CardData): number { return 0; }
+  earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null { return null; }
+}
+
 export class ModeManager {
   private static trickModes: Record<Exclude<ModeId, "FiftyOne" | "Trix">, TrickMode> = {
     KingOfHearts: new KingOfHeartsMode(),
@@ -292,7 +308,8 @@ export class ModeManager {
     Turns: new TurnsMode(),
     LastTrick: new LastTrickMode(),
     General: new GeneralMode(),
-  };
+    Switch: new SwitchMode(),
+  } as Record<Exclude<ModeId, "FiftyOne" | "Trix">, TrickMode>;
 
   static isTrickMode(id: ModeId): boolean {
     return id !== "FiftyOne" && id !== "Trix";
@@ -301,6 +318,30 @@ export class ModeManager {
   static trick(id: ModeId): TrickMode {
     if (id === "FiftyOne") throw new Error("FiftyOne is not a trick mode");
     if (id === "Trix") throw new Error("Trix is not a trick mode");
-    return ModeManager.trickModes[id];
+    const mm = ModeManager.trickModes as Record<string, TrickMode>;
+    return mm[id];
+  }
+
+  /**
+   * Returns true when Switch can be selected by this seat.
+   * Switch requires that at least one mode has been completed by ANY player
+   * (i.e., the global used list has at least one entry).
+   */
+  static switchAvailable(allUsed: ModeId[][]): boolean {
+    return allUsed.some((u) => u.some((m) => m !== "Switch"));
+  }
+
+  /**
+   * The set of modes that have been completed by at least one player
+   * and can be selected as the sub-mode for Switch.
+   */
+  static completedModes(allUsed: ModeId[][]): ModeId[] {
+    const seen = new Set<ModeId>();
+    for (const used of allUsed) {
+      for (const m of used) {
+        if (m !== "Switch") seen.add(m);
+      }
+    }
+    return [...seen];
   }
 }

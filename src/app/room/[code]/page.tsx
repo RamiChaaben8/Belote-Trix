@@ -10,7 +10,7 @@ import { useRoom } from "@/hooks/useRoom";
 export default function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const router = useRouter();
-  const { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, act } =
+  const { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, switchCountdown, switchSwapAnimating, act } =
     useRoom(code.toUpperCase());
 
   // Trix PASS — the server validates whether passing is actually allowed.
@@ -110,6 +110,8 @@ export default function RoomPage() {
         gameId={gameId}
         trixExtraTurnSeat={trixExtraTurnSeat}
         onTrixPass={handleTrixPass}
+        switchCountdown={switchCountdown}
+        switchSwapAnimating={switchSwapAnimating}
       />
     </div>
   );

@@ -29,6 +29,10 @@ export class BotPlayer extends Player {
   }
 
   pickMode(remaining: ModeId[], round: RoundManager | null, hand: import("./card").Card[], rng: () => number = Math.random): ModeId {
-    return chooseMode(remaining, hand, this.difficulty, rng);
+    // Bots never pick Switch autonomously — Switch requires multi-step human interaction
+    // (sub-mode selection + target selection). Filter it out unless it's the only option.
+    const withoutSwitch = remaining.filter((m) => m !== "Switch");
+    const pool = withoutSwitch.length > 0 ? withoutSwitch : remaining;
+    return chooseMode(pool, hand, this.difficulty, rng);
   }
 }

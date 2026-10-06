@@ -130,11 +130,27 @@ function playFullGame(difficulty: Difficulty, seed: number): GameEngine {
   const e = new GameEngine(players, rng);
   e.start();
   let guard = 0;
-  while (e.phase !== "finished" && guard++ < 5000) {
-    const seat = e.actor()!;
+  while (e.phase !== "finished" && guard++ < 10000) {
     if (e.phase === "selecting") {
-      e.selectMode(seat, chooseMode(e.remainingModes(seat), e.handOf(seat), difficulty, rng));
+      const seat = e.selector;
+      // Bots never pick Switch (mirrors players.ts behaviour)
+      const pool = e.remainingModes(seat).filter((m) => m !== "Switch");
+      const mode = pool.length > 0 ? chooseMode(pool, e.handOf(seat), difficulty, rng) : e.remainingModes(seat)[0];
+      e.selectMode(seat, mode);
+    } else if (e.phase === "switch_sub") {
+      const completed = ModeManager.completedModes(e.used);
+      const pick = completed[Math.floor(rng() * completed.length)];
+      e.selectSwitchSubMode(e.selector, pick);
+    } else if (e.phase === "switch_target") {
+      const others = [0, 1, 2, 3].filter((s) => s !== e.selector);
+      e.selectSwitchTarget(e.selector, others[Math.floor(rng() * others.length)]);
+    } else if (e.phase === "switch_reveal") {
+      // Drain countdown immediately (no real timer in tests)
+      while (e.phase === "switch_reveal") {
+        e.tickRevealCountdown();
+      }
     } else {
+      const seat = e.actor()!;
       e.play(seat, chooseMove(e.round!, seat, difficulty, rng));
     }
   }
@@ -143,11 +159,11 @@ function playFullGame(difficulty: Difficulty, seed: number): GameEngine {
 
 describe("GameEngine full matches", () => {
   for (const diff of ["easy", "medium", "hard"] as Difficulty[]) {
-    it(`completes 28 rounds with ${diff} bots`, () => {
+    it(`completes 36 rounds with ${diff} bots`, () => {
       for (let seed = 1; seed <= 5; seed++) {
         const e = playFullGame(diff, seed);
         expect(e.phase).toBe("finished");
-        expect(e.results).toHaveLength(32);
+        expect(e.results).toHaveLength(36);
         for (let s = 0; s < 4; s++) expect([...e.used[s]].sort()).toEqual([...MODE_IDS].sort() as ModeId[]);
       }
     });
@@ -167,9 +183,10 @@ describe("GameEngine full matches", () => {
       if (r.mode === "General" && r.endReason !== "Capot") expect(baseSum).toBe(490);
       // Trix: 1st gets -100, 2nd gets -50, others 0 → sum = -150
       if (r.mode === "Trix") expect(baseSum).toBe(-150);
-      // Selector score is doubled (except Capot which bypasses multiplier)
+      // Selector score is doubled (x2 for non-Switch; x4 for Switch; except Capot which bypasses multiplier)
       if (r.endReason !== "Capot") {
-        expect(r.scores[r.selector]).toBe(r.base[r.selector] * 2);
+        const expectedMultiplier = r.mode === "Switch" ? 4 : 2;
+        expect(r.scores[r.selector]).toBe(r.base[r.selector] * expectedMultiplier);
       }
     }
   });
