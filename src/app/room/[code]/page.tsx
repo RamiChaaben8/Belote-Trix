@@ -9,7 +9,7 @@ import { useRoom } from "@/hooks/useRoom";
 export default function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const router = useRouter();
-  const { room, chat, error, connected, lastTrick, notice, gameId, act } =
+  const { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, act } =
     useRoom(code.toUpperCase());
 
   if (!room) {
@@ -94,6 +94,9 @@ export default function RoomPage() {
       <Table
         room={room}
         lastTrick={lastTrick}
+        roundFinished={roundFinished}
+        roundBanner={roundBanner}
+        onRoundDismissed={() => setRoundFinished(null)}
         chat={chat}
         act={act}
         gameId={gameId}

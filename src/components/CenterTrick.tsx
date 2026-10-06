@@ -2,6 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { PlayingCard } from "./PlayingCard";
+import { FiftyOneCenter, type FiftyOneMove } from "./FiftyOneCenter";
 import { MODE_LABEL } from "@/lib/utils";
 import type { CardData, ModeId } from "@/types";
 
@@ -27,6 +28,13 @@ interface CenterTrickProps {
   fiftyTotal?: number;
   fiftyDirection?: 1 | -1;
   isCollecting?: boolean;
+
+  // Fifty One extras
+  fiftyMoves?: FiftyOneMove[];
+  names?: string[];
+  thinkingSeats?: number[];
+  selectorSeat?: number | null;
+  turnOrder?: number[];
 }
 
 export function CenterTrick({
@@ -43,6 +51,11 @@ export function CenterTrick({
   fiftyTotal,
   fiftyDirection,
   isCollecting,
+  fiftyMoves,
+  names,
+  thinkingSeats,
+  selectorSeat,
+  turnOrder,
 }: CenterTrickProps) {
   // Map absolute seat to relative table position
   // 0: bottom, 1: left, 2: top, 3: right (relative to youSeat)
@@ -150,20 +163,8 @@ export function CenterTrick({
           <div className="absolute inset-2 rounded-full border-2 border-emerald-400/10 flex items-center justify-center pointer-events-none">
             <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-emerald-300/15 flex items-center justify-center bg-emerald-950/20 backdrop-blur-[2px]">
               {mode === "FiftyOne" && fiftyTotal !== undefined ? (
-                <div
-                  className="flex flex-col items-center justify-center"
-                  data-testid="fifty-total"
-                >
-                  <span className="text-4xl sm:text-5xl font-black text-amber-300 drop-shadow-[0_0_15px_rgba(251,191,36,0.7)]">
-                    {fiftyTotal}
-                  </span>
-                  <span className="text-[11px] font-bold tracking-wider text-emerald-200 uppercase">
-                    / 51
-                  </span>
-                  <span className="text-[10px] text-emerald-300/80">
-                    {fiftyDirection === 1 ? "↻ Clockwise" : "↺ Reverse"}
-                  </span>
-                </div>
+                /* FiftyOne: delegate entirely to FiftyOneCenter */
+                null
               ) : (
                 <span className="text-emerald-400/25 font-serif text-3xl font-black tracking-widest">
                   TRIX
@@ -172,9 +173,31 @@ export function CenterTrick({
             </div>
           </div>
 
-          {/* Winner banner: "Noah wins the trick" */}
+          {/* FiftyOne mode — replace card trick with FiftyOneCenter */}
+          {mode === "FiftyOne" && fiftyTotal !== undefined && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center">
+              <FiftyOneCenter
+                total={fiftyTotal}
+                direction={fiftyDirection ?? 1}
+                recentPlays={(fiftyMoves ?? []).slice(-4).map((m) => ({
+                  seat: m.seat,
+                  card: m.card,
+                  delta: m.delta,
+                  aceValue: m.aceValue,
+                }))}
+                moveLog={fiftyMoves ?? []}
+                names={names ?? ["Seat 1", "Seat 2", "Seat 3", "Seat 4"]}
+                youSeat={youSeat}
+                thinkingSeats={thinkingSeats ?? []}
+                selectorSeat={selectorSeat ?? null}
+                turnOrder={turnOrder ?? [0, 1, 2, 3]}
+              />
+            </div>
+          )}
+
+          {/* Winner banner: "Noah wins the trick" — not shown in FiftyOne mode */}
           <AnimatePresence>
-            {winnerName && plays.length === 4 && (
+            {winnerName && plays.length === 4 && mode !== "FiftyOne" && (
               <motion.div
                 initial={{ opacity: 0, y: -20, scale: 0.85 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -187,9 +210,9 @@ export function CenterTrick({
             )}
           </AnimatePresence>
 
-          {/* Played Cards in Cross Form with smooth hand-to-center physics */}
+          {/* Played Cards in Cross Form — not shown in FiftyOne mode (FiftyOneCenter handles its own layout) */}
           <AnimatePresence>
-            {plays.map((play) => {
+            {mode !== "FiftyOne" && plays.map((play) => {
               const relPos = getRelativePosition(play.seat);
               const target = positionOffsets[relPos];
               const isWinner = winnerSeat === play.seat;

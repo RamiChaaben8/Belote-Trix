@@ -10,7 +10,9 @@ import { ScoreboardPanel } from "@/components/ScoreboardPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { RoundSummaryModal } from "@/components/RoundSummaryModal";
 import { FinalResultsModal } from "@/components/FinalResultsModal";
-import type { LastTrick, RoomView, ChatEntry } from "@/hooks/useRoom";
+import { LastPlayPanel } from "@/components/LastPlayPanel";
+import { ObjectiveBanner } from "@/components/ObjectiveBanner";
+import type { LastTrick, RoomView, ChatEntry, RoundFinishedPayload } from "@/hooks/useRoom";
 import type { CardData, Move, ModeId } from "@/types";
 
 type Act = (event: string, payload?: unknown) => Promise<unknown>;
@@ -20,12 +22,21 @@ const POS = ["bottom", "left", "top", "right"] as const;
 export function Table({
   room,
   lastTrick,
+  roundFinished,
+  roundBanner,
+  onRoundDismissed,
   chat,
   act,
   gameId,
 }: {
   room: RoomView;
   lastTrick: LastTrick | null;
+  /** Live payload from the `round_finished` socket event — non-null while modal should show. */
+  roundFinished: RoundFinishedPayload | null;
+  /** Immediate banner shown during trick collection animation, before the full modal. */
+  roundBanner: RoundFinishedPayload | null;
+  /** Called when the user clicks "Continue" on the round summary modal. */
+  onRoundDismissed: () => void;
   chat?: ChatEntry[];
   act: Act;
   gameId: string | null;
@@ -35,21 +46,21 @@ export function Table({
 
   const [aceFor, setAceFor] = useState<CardData | null>(null);
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
-  const [dismissedRoundNumber, setDismissedRoundNumber] = useState<number>(0);
   const [isCollecting, setIsCollecting] = useState(false);
 
   const round = room.round;
-  const myTurn = room.you !== null && room.actor === room.you;
-  const isSelector = room.phase === "selecting" && room.selector === room.you;
   const name = (s: number) => room.seats[s]?.name ?? `Seat ${s + 1}`;
 
-  // 2-second glow and celebration on winning card before collecting
+  // Block card plays while the round-summary modal OR the objective banner is showing.
+  const modalOpen = roundFinished !== null || roundBanner !== null;
+  const myTurn = !modalOpen && room.you !== null && room.actor === room.you;
+  const isSelector = !modalOpen && room.phase === "selecting" && room.selector === room.you;
+
+  // 1.5-second trick glow then collect animation
   useEffect(() => {
     if (lastTrick) {
       setIsCollecting(false);
-      const timer = setTimeout(() => {
-        setIsCollecting(true);
-      }, 1500);
+      const timer = setTimeout(() => setIsCollecting(true), 1500);
       return () => clearTimeout(timer);
     } else {
       setIsCollecting(false);
@@ -60,9 +71,9 @@ export function Table({
     room.legal.filter((m) => m.card.suit === c.suit && m.card.rank === c.rank);
 
   const handleCardClick = (c: CardData) => {
+    if (modalOpen) return; // hard block while result modal is open
     const moves = legalFor(c);
     if (!moves.length || !myTurn) return;
-
     setSelectedCard(c);
     if (moves.length > 1) {
       setAceFor(c);
@@ -82,72 +93,52 @@ export function Table({
   const winningSeat = lastTrick ? lastTrick.winner : null;
   const winningPlayerName = lastTrick ? name(lastTrick.winner) : null;
 
-  // Round summary popup at end of round
-  const latestRoundResult = room.history.length
-    ? room.history[room.history.length - 1]
-    : null;
-
-  const showRoundSummary =
-    latestRoundResult &&
-    dismissedRoundNumber < latestRoundResult.number &&
-    (room.phase === "selecting" || room.phase === "finished");
-
   const currentMode =
     round?.mode ??
     (room.history.length ? room.history[room.history.length - 1].mode : "");
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] min-h-[640px] max-h-[1050px] flex flex-col justify-between items-center select-none overflow-hidden">
-      {/* ======================================================== */}
-      {/* TOP HEADER OVERLAY BAR: SCOREBOARD (LEFT) & CHAT (RIGHT) */}
-      {/* ======================================================== */}
-      <div className="w-full flex items-start justify-between px-3 pt-2 pointer-events-none z-30">
-        {/* TOP LEFT: COMPACT SCOREBOARD PANEL */}
-        <div className="pointer-events-auto">
-          <ScoreboardPanel
-            roundNumber={Math.min(
-              room.roundNumber + (room.phase === "selecting" ? 1 : 0),
-              room.totalRounds
-            )}
-            totalRounds={room.totalRounds}
-            mode={currentMode}
-            selectorName={room.selector !== null ? name(room.selector) : "—"}
-            seats={[0, 1, 2, 3].map((seat) => ({
-              seat,
-              name: name(seat),
-              avatar: room.seats[seat]?.avatar ?? "🙂",
-              total: room.totals[seat],
-              isYou: seat === me,
-            }))}
-          />
-        </div>
 
-        {/* TOP RIGHT: COMPACT COLLAPSIBLE CHAT PANEL */}
-        <div className="pointer-events-auto">
-          <ChatPanel
-            chat={chat ?? room.chat ?? []}
-            onSend={(content) => void act("chat_message", { content })}
-            onlineCount={room.seats.filter((s) => s && s.connected).length}
-          />
-        </div>
-      </div>
+      {/* FIXED SCOREBOARD */}
+      <ScoreboardPanel
+        roundNumber={Math.min(
+          room.roundNumber + (room.phase === "selecting" ? 1 : 0),
+          room.totalRounds
+        )}
+        totalRounds={room.totalRounds}
+        mode={currentMode}
+        selectorName={room.selector !== null ? name(room.selector) : "—"}
+        seats={[0, 1, 2, 3].map((seat) => ({
+          seat,
+          name: name(seat),
+          avatar: room.seats[seat]?.avatar ?? "🙂",
+          total: room.totals[seat],
+          isYou: seat === me,
+        }))}
+      />
 
-      {/* ======================================================== */}
-      {/* CENTER: ENLARGED POKER TABLE (DOMINATES SCREEN)          */}
-      {/* ======================================================== */}
-      <div className="relative flex-1 w-full max-w-6xl px-1 sm:px-4 flex items-center justify-center -my-2">
+      {/* FLOATING CHAT */}
+      <ChatPanel
+        chat={chat ?? room.chat ?? []}
+        onSend={(content) => void act("chat_message", { content })}
+        onlineCount={room.seats.filter((s) => s && s.connected).length}
+      />
+
+      {/* CENTER: POKER TABLE */}
+      <div className="relative flex-1 w-full max-w-5xl px-1 sm:px-3 flex items-center justify-center">
         <div
           data-testid="poker-table"
-          className="relative flex items-center justify-center w-full h-[76vh] max-h-[620px] rounded-[5rem] sm:rounded-[7.5rem] border-[12px] sm:border-[20px] border-amber-950/95 shadow-[0_35px_80px_rgba(0,0,0,0.95),inset_0_0_100px_rgba(0,0,0,0.75)]"
+          className="relative flex items-center justify-center w-full rounded-[5rem] sm:rounded-[7rem] border-[12px] sm:border-[18px] border-amber-950/95 shadow-[0_35px_80px_rgba(0,0,0,0.95),inset_0_0_100px_rgba(0,0,0,0.75)]"
           style={{
+            height: "clamp(340px, calc(100vh - 320px), 580px)",
             background:
               "radial-gradient(ellipse at center, #13734a 0%, #0d5435 45%, #083722 80%, #031c11 100%)",
           }}
         >
-          {/* Elegant gold inner accent ring with subtle casino felt lighting */}
           <div className="absolute inset-2 sm:inset-4 rounded-[4.2rem] sm:rounded-[6.2rem] border-2 border-amber-400/40 shadow-[inset_0_0_35px_rgba(251,191,36,0.18)] pointer-events-none" />
 
-          {/* Broken Suits indicator in corner of table */}
+          {/* Broken Suits indicator */}
           {round && (round.mode === "KingOfHearts" || round.mode === "Diamonds") && (
             <div className="absolute top-5 right-10 z-10 hidden sm:flex items-center gap-1.5 text-[11px]">
               <span
@@ -163,11 +154,11 @@ export function Table({
             </div>
           )}
 
-          {/* 4 PLAYERS POSITIONED MINIMALLY AROUND TABLE */}
+          {/* 4 PLAYERS */}
           {room.seats.map((seatData, seatIdx) => {
             if (!seatData) return null;
             const position = POS[rel(seatIdx)];
-            const isTurn = room.actor === seatIdx && room.phase !== "finished";
+            const isTurn = !modalOpen && room.actor === seatIdx && room.phase !== "finished";
             const isDealer = room.dealer === seatIdx;
             const isRoundSelector = room.selector === seatIdx;
             const count = room.handCounts[seatIdx] ?? 0;
@@ -199,8 +190,6 @@ export function Table({
                   cardCount={count}
                   position={position}
                 />
-
-                {/* Opponents' Card Backs */}
                 {position !== "bottom" && room.phase !== "finished" && (
                   <div
                     className={`pointer-events-none ${
@@ -218,12 +207,10 @@ export function Table({
             );
           })}
 
-          {/* ======================================================== */}
-          {/* CENTER OF TABLE: DUAL STATE (MODE SELECTION / TRICKS)   */}
-          {/* ======================================================== */}
+          {/* CENTER: MODE SELECTION / TRICK AREA */}
           <div className="absolute inset-0 flex items-center justify-center z-15">
             <CenterTrick
-              isSelectingMode={room.phase === "selecting"}
+              isSelectingMode={!modalOpen && room.phase === "selecting"}
               isCurrentUserSelector={isSelector}
               selectorName={room.selector !== null ? name(room.selector) : ""}
               remainingModes={(room.remaining as ModeId[]) ?? []}
@@ -236,21 +223,60 @@ export function Table({
               fiftyTotal={round?.mode === "FiftyOne" ? round.total : undefined}
               fiftyDirection={round?.direction}
               isCollecting={isCollecting}
+              fiftyMoves={round?.mode === "FiftyOne" ? (round.fiftyMoves ?? []) : undefined}
+              names={[0, 1, 2, 3].map((s) => name(s))}
+              thinkingSeats={room.thinkingSeats ?? []}
+              selectorSeat={room.selector}
+              turnOrder={(() => {
+                const dir = round?.direction ?? 1;
+                const actor = room.actor ?? 0;
+                return [0, 1, 2, 3].map((i) => (actor + i * dir + 16) % 4);
+              })()}
             />
           </div>
+
+          {/* LAST PLAY PANEL — bottom-right corner, only for trick modes */}
+          {currentMode !== "FiftyOne" && (
+            <LastPlayPanel
+              trick={lastTrick ? {
+                winner: lastTrick.winner,
+                winnerName: name(lastTrick.winner),
+                plays: lastTrick.plays.map((p) => ({
+                  seat: p.seat,
+                  card: p.card,
+                  name: name(p.seat),
+                })),
+                trickIndex: room.round?.tricks.length ?? lastTrick.winner,
+              } : null}
+              mode={currentMode}
+            />
+          )}
+
+          {/* OBJECTIVE BANNER — appears immediately on round_finished, during trick animation */}
+          {currentMode !== "FiftyOne" && (
+            <ObjectiveBanner
+              banner={roundBanner}
+              names={[0, 1, 2, 3].map((s) => name(s))}
+              selectorSeat={room.selector}
+            />
+          )}
+
+          {/* OBJECTIVE BANNER — appears immediately on round_finished, during trick animation */}
+          {currentMode !== "FiftyOne" && (
+            <ObjectiveBanner
+              banner={roundBanner}
+              names={[0, 1, 2, 3].map((s) => name(s))}
+              selectorSeat={room.selector}
+            />
+          )}
         </div>
       </div>
 
-      {/* ======================================================== */}
-      {/* BOTTOM: USER HAND OF CARDS                               */}
-      {/* ======================================================== */}
-      <div className="w-full flex flex-col items-center justify-end z-25 pb-1 sm:pb-2">
-        {/* Ace choice popup for Fifty One mode */}
+      {/* BOTTOM: PLAYER HAND */}
+      <div className="w-full flex flex-col items-center justify-end z-25 pb-6 shrink-0">
         {aceFor && myTurn && (
-          <div className="flex items-center justify-center gap-3 p-2.5 bg-slate-950/95 border-2 border-amber-400 rounded-2xl mb-1 shadow-2xl z-30">
-            <span className="text-xs sm:text-sm font-black text-amber-300">
-              Play Ace as:
-            </span>
+          <div className="flex items-center justify-center gap-3 p-2 bg-slate-950/95 border-2 border-amber-400 rounded-2xl mb-1 shadow-2xl z-30">
+            <span className="text-xs font-black text-amber-300">Play Ace as:</span>
             {legalFor(aceFor).map((m) => (
               <Button
                 key={m.aceValue}
@@ -269,12 +295,11 @@ export function Table({
           </div>
         )}
 
-        {/* Turn prompt chip */}
         {room.you !== null && room.phase !== "finished" && (
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-2 mb-1">
             <span
               data-testid="turn-hint"
-              className={`text-xs sm:text-sm font-black px-4 py-0.5 rounded-full shadow-lg ${
+              className={`text-xs font-black px-3 py-0.5 rounded-full shadow-lg ${
                 myTurn
                   ? "bg-amber-400 text-slate-950 animate-pulse border border-yellow-200"
                   : "bg-slate-900/90 text-slate-300 border border-slate-700"
@@ -291,9 +316,8 @@ export function Table({
           </div>
         )}
 
-        {/* Realistic Flat Card Fan */}
         {room.you !== null && room.phase !== "finished" && (
-          <div data-testid="hand" className="w-full flex justify-center">
+          <div data-testid="hand" className="w-full flex justify-center overflow-visible">
             <CardFan
               cards={room.hand}
               legalMoves={room.legal}
@@ -306,36 +330,38 @@ export function Table({
         )}
 
         {room.you === null && (
-          <p className="text-center text-xs text-slate-400 py-2">
+          <p className="text-center text-xs text-slate-400 py-1">
             You are spectating this match.
           </p>
         )}
       </div>
 
       {/* ======================================================== */}
-      {/* ROUND END BREAKDOWN MODAL                                */}
+      {/* ROUND SUMMARY MODAL                                       */}
+      {/* Driven by the raw round_finished socket event.           */}
+      {/* Stays open regardless of what phase the server has moved  */}
+      {/* on to — blocks all interaction until dismissed.          */}
       {/* ======================================================== */}
-      {showRoundSummary && latestRoundResult && (
+      {roundFinished && (
         <RoundSummaryModal
-          roundNumber={latestRoundResult.number}
-          mode={latestRoundResult.mode}
-          selectorSeat={latestRoundResult.selector}
+          roundNumber={roundFinished.roundNumber}
+          mode={roundFinished.mode}
+          endReason={roundFinished.endReason}
+          selectorSeat={roundFinished.selector}
           players={room.seats.map((s, idx) => ({
             seat: idx,
             name: s?.name ?? `Seat ${idx + 1}`,
             avatar: s?.avatar ?? "🙂",
           }))}
-          baseScores={latestRoundResult.base}
-          multipliers={latestRoundResult.multipliers}
-          finalScores={latestRoundResult.scores}
-          onContinue={() => setDismissedRoundNumber(latestRoundResult.number)}
+          baseScores={roundFinished.base}
+          multipliers={roundFinished.multipliers}
+          finalScores={roundFinished.scores}
+          onContinue={onRoundDismissed}
         />
       )}
 
-      {/* ======================================================== */}
-      {/* FINAL MATCH RESULTS SCREEN (LOWEST SCORE WINS)           */}
-      {/* ======================================================== */}
-      {room.phase === "finished" && (
+      {/* FINAL RESULTS */}
+      {room.phase === "finished" && !roundFinished && (
         <FinalResultsModal
           players={room.seats.map((s, idx) => ({
             seat: idx,

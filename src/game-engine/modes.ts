@@ -10,6 +10,12 @@ export abstract class TrickMode {
   trickPoints(cards: CardData[]): number {
     return cards.reduce((s, c) => s + this.cardPoints(c), 0);
   }
+  /**
+   * Returns a human-readable end-reason string if the completed tricks
+   * satisfy an early-termination condition, or null if the round should continue.
+   * `completedTricks` is the full list of tricks finished so far (including the latest).
+   */
+  abstract earlyTermination(completedTricks: { plays: { card: CardData }[] }[]): string | null;
 }
 
 export class KingOfHeartsMode extends TrickMode {
@@ -19,14 +25,33 @@ export class KingOfHeartsMode extends TrickMode {
   cardPoints(c: CardData): number {
     return c.suit === "H" && c.rank === "K" ? 150 : 0;
   }
+  earlyTermination(completedTricks: { plays: { card: CardData }[] }[]): string | null {
+    for (const t of completedTricks) {
+      if (t.plays.some((p) => p.card.suit === "H" && p.card.rank === "K")) {
+        return "King of Hearts Captured";
+      }
+    }
+    return null;
+  }
 }
 
 export class DiamondsMode extends TrickMode {
   readonly id = "Diamonds" as const;
   readonly restrictedSuit: Suit = "D";
   readonly avoid = true;
+  /** Total diamonds in a 32-card deck = 8 (7♦ 8♦ 9♦ 10♦ J♦ Q♦ K♦ A♦). */
+  private static readonly TOTAL_DIAMONDS = 8;
   cardPoints(c: CardData): number {
     return c.suit === "D" ? 10 : 0;
+  }
+  earlyTermination(completedTricks: { plays: { card: CardData }[] }[]): string | null {
+    let captured = 0;
+    for (const t of completedTricks) {
+      for (const p of t.plays) {
+        if (p.card.suit === "D") captured++;
+      }
+    }
+    return captured >= DiamondsMode.TOTAL_DIAMONDS ? "All Diamonds Captured" : null;
   }
 }
 
@@ -34,8 +59,19 @@ export class QueensMode extends TrickMode {
   readonly id = "Queens" as const;
   readonly restrictedSuit = null;
   readonly avoid = true;
+  /** Total queens in deck = 4 (Q♥ Q♦ Q♣ Q♠). */
+  private static readonly TOTAL_QUEENS = 4;
   cardPoints(c: CardData): number {
     return c.rank === "Q" ? 20 : 0;
+  }
+  earlyTermination(completedTricks: { plays: { card: CardData }[] }[]): string | null {
+    let captured = 0;
+    for (const t of completedTricks) {
+      for (const p of t.plays) {
+        if (p.card.rank === "Q") captured++;
+      }
+    }
+    return captured >= QueensMode.TOTAL_QUEENS ? "All Queens Captured" : null;
   }
 }
 

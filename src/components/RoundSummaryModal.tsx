@@ -7,6 +7,7 @@ import { MODE_LABEL } from "@/lib/utils";
 interface RoundSummaryModalProps {
   roundNumber: number;
   mode: string;
+  endReason: string | null;
   selectorSeat: number;
   players: { seat: number; name: string; avatar: string }[];
   baseScores: number[];
@@ -18,6 +19,7 @@ interface RoundSummaryModalProps {
 export function RoundSummaryModal({
   roundNumber,
   mode,
+  endReason,
   selectorSeat,
   players,
   baseScores,
@@ -25,6 +27,14 @@ export function RoundSummaryModal({
   finalScores,
   onContinue,
 }: RoundSummaryModalProps) {
+  // Pick an emoji for the end reason
+  const reasonEmoji =
+    endReason === "King of Hearts Captured" ? "👑"
+    : endReason === "All Diamonds Captured" ? "♦"
+    : endReason === "All Queens Captured" ? "👸"
+    : endReason === "51 Reached" ? "🎯"
+    : "✅";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
       <motion.div
@@ -40,7 +50,14 @@ export function RoundSummaryModal({
           <h2 className="text-2xl font-black text-white mt-1">
             {MODE_LABEL[mode] || mode} Summary
           </h2>
-          <p className="text-xs text-slate-400 mt-1">
+          {/* End reason banner */}
+          {endReason && (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/60 border border-amber-500/40 text-amber-300 font-bold text-sm">
+              <span>{reasonEmoji}</span>
+              <span>{endReason}</span>
+            </div>
+          )}
+          <p className="text-xs text-slate-400 mt-2">
             Selector ({players[selectorSeat]?.name}) receives <b>x2 Double Points</b>!
           </p>
         </div>

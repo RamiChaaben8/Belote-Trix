@@ -10,6 +10,8 @@ export interface RoundResult {
   number: number;
   mode: ModeId;
   selector: number;
+  /** Human-readable reason the round ended (e.g. "King of Hearts Captured"). */
+  endReason: string | null;
   /** Raw points before the selector multiplier. */
   base: number[];
   multipliers: number[];
@@ -90,11 +92,12 @@ export class GameEngine {
     const multipliers = ScoreManager.multipliers(this.selector, this.players.length);
     const finalScores = ScoreManager.applyMultiplier(base, this.selector);
     this.totals = ScoreManager.add(this.totals, finalScores);
-    this.results.push({ number: this.roundNumber, mode: r.mode, selector: this.selector, base, multipliers, scores: finalScores, round: r });
+    const endReason = r.endReason;
+    this.results.push({ number: this.roundNumber, mode: r.mode, selector: this.selector, endReason, base, multipliers, scores: finalScores, round: r });
     const events: EngineEvent[] = [
       {
         type: "round_finished",
-        data: { roundNumber: this.roundNumber, mode: r.mode, selector: this.selector, base, multipliers, scores: finalScores },
+        data: { roundNumber: this.roundNumber, mode: r.mode, selector: this.selector, endReason, base, multipliers, scores: finalScores },
       },
       { type: "score_updated", data: { totals: this.totals, deltas: this.totals.map((t, i) => t - before[i]) } },
     ];

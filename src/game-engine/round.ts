@@ -17,6 +17,8 @@ export class RoundManager {
   total = 0;
   direction: 1 | -1 = 1;
   finished = false;
+  /** Human-readable reason the round ended (set on early termination or normal finish). */
+  endReason: string | null = null;
   leader: number;
 
   constructor(mode: ModeId, hands: Card[][], selector: number) {
@@ -93,7 +95,17 @@ export class RoundManager {
       this.trick = [];
       this.leader = winner;
       this.turn = winner;
-      if (this.hands.every((h) => h.length === 0)) this.finished = true;
+
+      // ── Early-termination check ──────────────────────────────────
+      const earlyReason = this.trickMode().earlyTermination(this.completed);
+      if (earlyReason !== null) {
+        this.endReason = earlyReason;
+        this.finished = true;
+      } else if (this.hands.every((h) => h.length === 0)) {
+        // All 8 tricks played — normal finish
+        this.finished = true;
+      }
+      // ─────────────────────────────────────────────────────────────
     } else {
       this.turn = (seat + 1) % 4;
     }

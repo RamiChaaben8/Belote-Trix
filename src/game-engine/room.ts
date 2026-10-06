@@ -216,12 +216,23 @@ export class GameRoom {
               total: r!.total,
               direction: r!.direction,
               tricks: r!.completed.map((t) => ({ index: t.index, winner: t.winner, points: t.points, plays: t.plays })),
+              fiftyMoves: r!.mode === "FiftyOne"
+                ? r!.plays.slice(-10).map((p) => ({
+                    seat: p.seat,
+                    card: p.card,
+                    delta: p.total !== undefined ? (p.total - (r!.plays[p.seq - 1]?.total ?? 0)) : 0,
+                    prevTotal: p.total !== undefined ? (r!.plays[p.seq - 1]?.total ?? 0) : 0,
+                    newTotal: p.total ?? 0,
+                    aceValue: p.aceValue ?? null,
+                  }))
+                : undefined,
             }
           : null,
       history: (e?.results ?? []).map((x) => ({
         number: x.number,
         mode: x.mode,
         selector: x.selector,
+        endReason: x.endReason,
         base: x.base,
         multipliers: x.multipliers,
         scores: x.scores,

@@ -43,7 +43,21 @@ export function attachSocketServer(httpServer: HttpServer): Server {
 
   async function broadcast(room: GameRoom) {
     const sockets = await io.in(room.code).fetchSockets();
-    for (const s of sockets) s.emit("room_state", room.view(s.data.clientId as string));
+    for (const s of sockets) s.emit("room_state", { ...room.view(s.data.clientId as string), thinkingSeats: [...(thinkingSeats.get(room.code) ?? [])] });
+  }
+
+  // Per-room set of seats currently "thinking" (used for Fifty One bot indicator)
+  const thinkingSeats = new Map<string, Set<number>>();
+
+  function setThinking(room: GameRoom, seat: number | null) {
+    if (!thinkingSeats.has(room.code)) thinkingSeats.set(room.code, new Set());
+    const set = thinkingSeats.get(room.code)!;
+    if (seat === null) set.clear();
+    else set.add(seat);
+  }
+
+  function clearThinking(room: GameRoom, seat: number) {
+    thinkingSeats.get(room.code)?.delete(seat);
   }
 
   function emitEvents(room: GameRoom, events: EngineEvent[]) {
@@ -65,15 +79,44 @@ export function attachSocketServer(httpServer: HttpServer): Server {
     const p = room.seats[seat]!;
     const humanAbsent = !p.isBot && !p.connected;
     if (!p.isBot && !humanAbsent) return;
-    const delay = humanAbsent ? Math.max(500, DISCONNECT_GRACE_MS - (Date.now() - (p.disconnectedAt ?? Date.now()))) : heavy ? 1800 : 900;
+
+    const isFifty = e.phase === "playing" && e.round?.mode === "FiftyOne";
+    const isSelectingPhase = e.phase === "selecting";
+
+    let delay: number;
+    if (humanAbsent) {
+      delay = Math.max(500, DISCONNECT_GRACE_MS - (Date.now() - (p.disconnectedAt ?? Date.now())));
+    } else if (isSelectingPhase && p.isBot) {
+      // After a round ends, give clients time to read the round summary before bots pick a mode.
+      // heavy=true means we just finished a round — use a longer pause.
+      delay = heavy ? 3500 : 1200;
+    } else if (isFifty && p.isBot) {
+      const diff = room.difficulty;
+      if (diff === "easy") delay = 1500 + Math.random() * 500;
+      else if (diff === "medium") delay = 2000 + Math.random() * 1000;
+      else delay = 2500 + Math.random() * 1500;
+    } else {
+      delay = heavy ? 1800 : 900;
+    }
+
+    // Show "thinking…" indicator for bots in Fifty One mode
+    if (isFifty && p.isBot && !humanAbsent) {
+      setThinking(room, seat);
+      broadcast(room);
+    }
+
     room.timer = setTimeout(async () => {
       room.timer = null;
       if (!room.actorIsAuto(DISCONNECT_GRACE_MS)) return schedule(room);
+      if (isFifty && p.isBot) {
+        clearThinking(room, seat);
+      }
       try {
         const events = room.autoAct();
         emitEvents(room, events);
         await broadcast(room);
-        schedule(room, events.some((x) => x.type === "trick_finished" || x.type === "round_finished"));
+        const roundJustFinished = events.some((x) => x.type === "round_finished");
+        schedule(room, roundJustFinished || events.some((x) => x.type === "trick_finished"));
       } catch (err) {
         console.error("[bot] action failed", err);
       }

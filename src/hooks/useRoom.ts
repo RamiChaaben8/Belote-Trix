@@ -53,11 +53,21 @@ export interface RoomView {
     total: number;
     direction: 1 | -1;
     tricks: { index: number; winner: number; points: number; plays: { seat: number; card: CardData }[] }[];
+    fiftyMoves?: {
+      seat: number;
+      card: CardData;
+      delta: number;
+      prevTotal: number;
+      newTotal: number;
+      aceValue: 1 | 11 | null;
+    }[];
   } | null;
+  thinkingSeats?: number[];
   history: {
     number: number;
     mode: string;
     selector: number;
+    endReason: string | null;
     base: number[];
     multipliers: number[];
     scores: number[];
@@ -66,6 +76,7 @@ export interface RoomView {
     number: number;
     mode: string;
     selector: number;
+    endReason: string | null;
     base: number[];
     multipliers: number[];
     scores: number[];
@@ -86,6 +97,16 @@ export interface LastTrick {
   plays: { seat: number; card: CardData }[];
 }
 
+export interface RoundFinishedPayload {
+  roundNumber: number;
+  mode: string;
+  selector: number;
+  endReason: string | null;
+  base: number[];
+  multipliers: number[];
+  scores: number[];
+}
+
 export function useRoom(code: string) {
   const { sound } = useSettings();
   const soundRef = useRef(sound);
@@ -95,6 +116,9 @@ export function useRoom(code: string) {
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [lastTrick, setLastTrick] = useState<LastTrick | null>(null);
+  const [roundFinished, setRoundFinished] = useState<RoundFinishedPayload | null>(null);
+  /** Fires immediately when round_finished arrives — shows the objective banner during animation */
+  const [roundBanner, setRoundBanner] = useState<RoundFinishedPayload | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [gameId, setGameId] = useState<string | null>(null);
   const yourSeat = useRef<number | null>(null);
@@ -130,7 +154,19 @@ export function useRoom(code: string) {
     const onTrick = (t: LastTrick) => {
       setLastTrick(t);
       clearTimeout(trickTimer);
-      trickTimer = setTimeout(() => setLastTrick(null), 1700);
+      // Keep last trick visible for 3s so LastPlayPanel shows during round-end delay
+      trickTimer = setTimeout(() => setLastTrick(null), 3000);
+    };
+    let roundFinishedTimer: ReturnType<typeof setTimeout>;
+    const onRoundFinished = (payload: RoundFinishedPayload) => {
+      // Show the objective banner immediately so players see it during the trick animation.
+      setRoundBanner(payload);
+      // Delay the full modal by 2.5s so the trick animation (1.5s glow + 0.65s collect) plays out.
+      clearTimeout(roundFinishedTimer);
+      roundFinishedTimer = setTimeout(() => {
+        setRoundBanner(null);
+        setRoundFinished(payload);
+      }, 2500);
     };
     const onDeal = () => playSound("deal", soundRef.current);
     const onFinished = () => playSound("win", soundRef.current);
@@ -145,6 +181,7 @@ export function useRoom(code: string) {
     s.on("chat_message", onChat);
     s.on("card_played", onCard);
     s.on("trick_finished", onTrick);
+    s.on("round_finished", onRoundFinished);
     s.on("deal_cards", onDeal);
     s.on("game_finished", onFinished);
     s.on("game_saved", onSaved);
@@ -154,11 +191,13 @@ export function useRoom(code: string) {
     if (s.connected) void join();
     return () => {
       clearTimeout(trickTimer);
+      clearTimeout(roundFinishedTimer);
       s.off("connect", join);
       s.off("room_state", onState);
       s.off("chat_message", onChat);
       s.off("card_played", onCard);
       s.off("trick_finished", onTrick);
+      s.off("round_finished", onRoundFinished);
       s.off("deal_cards", onDeal);
       s.off("game_finished", onFinished);
       s.off("game_saved", onSaved);
@@ -177,5 +216,5 @@ export function useRoom(code: string) {
     return res;
   }, []);
 
-  return { room, chat, error, connected, lastTrick, notice, gameId, act };
+  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, act };
 }
