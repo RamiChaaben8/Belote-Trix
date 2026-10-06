@@ -2,8 +2,10 @@ export const SUITS = ["H", "D", "C", "S"] as const;
 export type Suit = (typeof SUITS)[number];
 export const RANKS = ["7", "8", "9", "10", "J", "Q", "K", "A"] as const;
 export type Rank = (typeof RANKS)[number];
-export type ModeId = "KingOfHearts" | "Diamonds" | "Queens" | "FiftyOne";
+export type ModeId = "KingOfHearts" | "Diamonds" | "Queens" | "Turns" | "LastTrick" | "Trix" | "FiftyOne";
+export const MODE_IDS: ModeId[] = ["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "FiftyOne"];
 export type Difficulty = "easy" | "medium" | "hard";
+export type GameType = "full" | "quick";
 
 export interface CardData {
   suit: Suit;
@@ -14,6 +16,8 @@ export interface Move {
   card: CardData;
   /** Only meaningful for an Ace in FiftyOne mode. */
   aceValue?: 1 | 11;
+  /** Trix mode: request to pass (legal only when there is no non-Ace legal move). */
+  trixPass?: boolean;
 }
 
 export interface Play {
@@ -40,5 +44,3 @@ export interface EngineEvent {
   type: string;
   data: Record<string, unknown>;
 }
-
-export const MODE_IDS: ModeId[] = ["KingOfHearts", "Diamonds", "Queens", "FiftyOne"];

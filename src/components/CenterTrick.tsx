@@ -32,9 +32,12 @@ interface CenterTrickProps {
   // Fifty One extras
   fiftyMoves?: FiftyOneMove[];
   names?: string[];
+  avatars?: string[];
   thinkingSeats?: number[];
   selectorSeat?: number | null;
   turnOrder?: number[];
+  /** Per-seat trick counts for Turns mode (index = seat). */
+  trickCounts?: number[];
 }
 
 export function CenterTrick({
@@ -53,9 +56,11 @@ export function CenterTrick({
   isCollecting,
   fiftyMoves,
   names,
+  avatars,
   thinkingSeats,
   selectorSeat,
   turnOrder,
+  trickCounts,
 }: CenterTrickProps) {
   // Map absolute seat to relative table position
   // 0: bottom, 1: left, 2: top, 3: right (relative to youSeat)
@@ -99,13 +104,22 @@ export function CenterTrick({
       {/* STATE 1: LARGE CENTER MODE SELECTION                      */}
       {/* ========================================================= */}
       {isSelectingMode ? (
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.8, opacity: 0 }}
-          transition={{ duration: 0.35, ease: "easeOut" }}
-          className="relative z-30 pointer-events-auto flex flex-col items-center justify-center p-5 sm:p-7 rounded-3xl bg-slate-950/95 border-2 border-amber-400/50 backdrop-blur-2xl shadow-[0_20px_50px_rgba(0,0,0,0.9)] max-w-sm sm:max-w-md text-center"
-        >
+        <>
+          {/* Dark semi-transparent overlay without blur (rgba(0,0,0,0.35)) */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-25 bg-black/35 pointer-events-none"
+          />
+
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            className="relative z-30 pointer-events-auto flex flex-col items-center justify-center p-5 sm:p-7 rounded-3xl bg-slate-950/98 border-2 border-amber-400/60 shadow-[0_20px_50px_rgba(0,0,0,0.9)] max-w-sm sm:max-w-md text-center"
+          >
           {isCurrentUserSelector ? (
             <>
               <div className="flex items-center gap-2 mb-1 text-amber-300 font-black text-base sm:text-lg">
@@ -136,6 +150,12 @@ export function CenterTrick({
                         ? "+10/♦ (x2=20)"
                         : m === "Queens"
                         ? "+20/Q (x2=40)"
+                        : m === "Turns"
+                        ? "+10 per trick won"
+                        : m === "LastTrick"
+                        ? "+100 for final trick"
+                        : m === "Trix"
+                        ? "1st: -100 · 2nd: -50"
                         : "+510 (x2=1020)"}
                     </span>
                   </motion.button>
@@ -154,6 +174,7 @@ export function CenterTrick({
             </div>
           )}
         </motion.div>
+        </>
       ) : (
         /* ========================================================= */
         /* STATE 2: ACTIVE TRICK CENTER CARDS                        */
@@ -161,7 +182,7 @@ export function CenterTrick({
         <>
           {/* Subtle table felt watermark ring */}
           <div className="absolute inset-2 rounded-full border-2 border-emerald-400/10 flex items-center justify-center pointer-events-none">
-            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-emerald-300/15 flex items-center justify-center bg-emerald-950/20 backdrop-blur-[2px]">
+            <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-emerald-300/15 flex items-center justify-center bg-emerald-950/20">
               {mode === "FiftyOne" && fiftyTotal !== undefined ? (
                 /* FiftyOne: delegate entirely to FiftyOneCenter */
                 null
@@ -187,6 +208,7 @@ export function CenterTrick({
                 }))}
                 moveLog={fiftyMoves ?? []}
                 names={names ?? ["Seat 1", "Seat 2", "Seat 3", "Seat 4"]}
+                avatars={avatars ?? ["🙂", "🙂", "🙂", "🙂"]}
                 youSeat={youSeat}
                 thinkingSeats={thinkingSeats ?? []}
                 selectorSeat={selectorSeat ?? null}
@@ -205,10 +227,38 @@ export function CenterTrick({
                 className="absolute -top-10 sm:-top-12 z-50 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-[0_0_25px_rgba(251,191,36,0.9)] tracking-wide border-2 border-yellow-100 flex items-center gap-1.5"
               >
                 <span>🏆</span>
-                <span>{winnerName} wins the trick!</span>
+                <span>{winnerName} wins the trick</span>
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Turns mode: tricks-won tracker panel */}
+          {mode === "Turns" && trickCounts && names && (
+            <motion.div
+              initial={{ opacity: 0, x: 40 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="absolute -right-2 sm:right-0 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-1 px-2.5 py-2 rounded-xl bg-slate-950/95 border border-teal-500/40 shadow-xl text-[11px] min-w-[110px]"
+            >
+              <div className="text-[10px] font-black uppercase tracking-widest text-teal-400 mb-0.5 text-center">
+                Tricks Won
+              </div>
+              {[0, 1, 2, 3].map((seat) => (
+                <div
+                  key={seat}
+                  className={`flex items-center justify-between gap-2 px-1.5 py-0.5 rounded ${
+                    seat === youSeat ? "bg-teal-950/60 text-teal-200 font-bold" : "text-slate-300"
+                  }`}
+                >
+                  <span className="truncate max-w-[70px]">
+                    {names[seat] ?? `Seat ${seat + 1}`}
+                  </span>
+                  <span className="font-mono font-bold text-amber-300 shrink-0">
+                    {trickCounts[seat] ?? 0}
+                  </span>
+                </div>
+              ))}
+            </motion.div>
+          )}
 
           {/* Played Cards in Cross Form — not shown in FiftyOne mode (FiftyOneCenter handles its own layout) */}
           <AnimatePresence>
@@ -224,7 +274,7 @@ export function CenterTrick({
                     x: target.startX,
                     y: target.startY,
                     rotate: target.rotate * 3,
-                    scale: 0.7,
+                    scale: 0.6,
                     opacity: 0,
                   }}
                   animate={
@@ -244,8 +294,10 @@ export function CenterTrick({
                           opacity: 1,
                           transition: {
                             type: "spring",
-                            stiffness: 280,
-                            damping: 24,
+                            stiffness: 180,
+                            damping: 20,
+                            mass: 0.9,
+                            duration: 0.65,
                           },
                         }
                   }

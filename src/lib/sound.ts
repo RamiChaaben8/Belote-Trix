@@ -17,7 +17,7 @@ function tone(freq: number, duration: number, type: OscillatorType = "sine", gai
   osc.stop(t + duration);
 }
 
-export type SoundName = "play" | "win" | "turn" | "deal" | "chat";
+export type SoundName = "play" | "win" | "turn" | "deal" | "chat" | "bust";
 
 export function playSound(name: SoundName, enabled: boolean) {
   if (!enabled) return;
@@ -30,6 +30,11 @@ export function playSound(name: SoundName, enabled: boolean) {
     }
     if (name === "win") [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.25, "triangle", 0.08, i * 0.15));
     if (name === "chat") tone(900, 0.05, "sine", 0.04);
+    if (name === "bust") {
+      tone(180, 0.35, "sawtooth", 0.15);
+      tone(130, 0.45, "sawtooth", 0.18, 0.12);
+      tone(90, 0.7, "triangle", 0.22, 0.28);
+    }
   } catch {
     /* audio unavailable */
   }

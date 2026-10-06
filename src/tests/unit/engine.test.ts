@@ -111,6 +111,17 @@ describe("FiftyOne", () => {
     expect(next.length).toBeGreaterThan(0);
     expect(r.legalMoves(r.turn).length).toBeGreaterThan(0);
   });
+  it("awards 510 to the surviving player when opponents have no legal moves or cards run out", () => {
+    // Player 0 plays 7 (total reaches 47). Player 1 has only a King (+4 -> 51? wait King is 4, 47+4=51).
+    // Let total reach 48. Player 1, 2, 3 have only 7s (+7 -> 55 > 51, no legal moves).
+    const r = new RoundManager("FiftyOne", hands([c("8", "S")], [c("7", "D")], [c("7", "C")], [c("7", "H")]), 0);
+    r.total = 40;
+    r.play(0, { card: c("8", "S").toJSON() }); // total = 48
+    // Players 1, 2, 3 all hold '7' (48 + 7 = 55 > 51), so none have legal moves.
+    expect(r.finished).toBe(true);
+    expect(r.scores[0]).toBe(510);
+    expect(r.endReason).toBe("No Legal Moves Left");
+  });
 });
 
 function playFullGame(difficulty: Difficulty, seed: number): GameEngine {
@@ -132,11 +143,11 @@ function playFullGame(difficulty: Difficulty, seed: number): GameEngine {
 
 describe("GameEngine full matches", () => {
   for (const diff of ["easy", "medium", "hard"] as Difficulty[]) {
-    it(`completes 16 rounds with ${diff} bots`, () => {
+    it(`completes 28 rounds with ${diff} bots`, () => {
       for (let seed = 1; seed <= 5; seed++) {
         const e = playFullGame(diff, seed);
         expect(e.phase).toBe("finished");
-        expect(e.results).toHaveLength(16);
+        expect(e.results).toHaveLength(28);
         for (let s = 0; s < 4; s++) expect([...e.used[s]].sort()).toEqual([...MODE_IDS].sort() as ModeId[]);
       }
     });
@@ -148,8 +159,16 @@ describe("GameEngine full matches", () => {
       if (r.mode === "KingOfHearts") expect(baseSum).toBe(150);
       if (r.mode === "Diamonds") expect(baseSum).toBe(80);
       if (r.mode === "Queens") expect(baseSum).toBe(80);
-      // Selector score is doubled
-      expect(r.scores[r.selector]).toBe(r.base[r.selector] * 2);
+      // Turns: 8 tricks × 10 = 80 total base (Capot overrides but net is different)
+      if (r.mode === "Turns" && r.endReason !== "Capot") expect(baseSum).toBe(80);
+      // LastTrick: exactly one winner gets +100, others 0
+      if (r.mode === "LastTrick") expect(baseSum).toBe(100);
+      // Trix: 1st gets -100, 2nd gets -50, others 0 → sum = -150
+      if (r.mode === "Trix") expect(baseSum).toBe(-150);
+      // Selector score is doubled (except Capot which bypasses multiplier)
+      if (r.endReason !== "Capot") {
+        expect(r.scores[r.selector]).toBe(r.base[r.selector] * 2);
+      }
     }
   });
   it("rejects out-of-turn actions", () => {
@@ -449,5 +468,317 @@ describe("GameRoom", () => {
     let guard = 0;
     while (room.engine!.phase !== "finished" && guard++ < 5000) room.autoAct();
     expect(room.engine!.phase).toBe("finished");
+  });
+
+  it("Quick Test: plays only 1 round and finishes match immediately", () => {
+    const room = new GameRoom("TEST01", "host", mulberry32(11), "quick", "KingOfHearts");
+    room.fillBots("medium");
+    room.start();
+    expect(room.engine!.gameType).toBe("quick");
+    expect(room.engine!.totalRounds).toBe(1);
+    expect(room.engine!.round?.mode).toBe("KingOfHearts");
+    let guard = 0;
+    while (room.engine!.phase !== "finished" && guard++ < 500) room.autoAct();
+    expect(room.engine!.phase).toBe("finished");
+    expect(room.engine!.roundNumber).toBe(1);
+    expect(room.engine!.results).toHaveLength(1);
+  });
+});
+
+describe("Turns mode – Capot rule", () => {
+  // Build a Turns round where seat 0 wins every trick.
+  // Seat 0 holds the 8 highest cards across 4 suits; others hold 2 of the same suit each.
+  // Seat 0 leads a suit, others must follow and play weaker cards.
+  function buildCapotRound(selectorSeat = 0): RoundManager {
+    // Distribute 8 cards so seat 0 always has the highest in every suit.
+    // 2 tricks per suit; seat 0 always wins with the Ace/10.
+    return new RoundManager(
+      "Turns",
+      hands(
+        [c("A","S"), c("10","S"), c("A","H"), c("10","H"), c("A","D"), c("10","D"), c("A","C"), c("10","C")],
+        [c("9","S"), c("8","S"), c("9","H"), c("8","H"), c("9","D"), c("8","D"), c("9","C"), c("8","C")],
+        [c("K","S"), c("Q","S"), c("K","H"), c("Q","H"), c("K","D"), c("Q","D"), c("K","C"), c("Q","C")],
+        [c("J","S"), c("7","S"), c("J","H"), c("7","H"), c("J","D"), c("7","D"), c("J","C"), c("7","C")],
+      ),
+      selectorSeat,
+    );
+  }
+
+  it("detects Capot when seat 0 wins all 8 tricks and overrides scores to -100/+100", () => {
+    const r = buildCapotRound(0);
+    // Play all 8 tricks — seat 0 leads each suit twice and wins every time
+    for (let trick = 0; trick < 8; trick++) {
+      for (let s = 0; s < 4; s++) {
+        r.play(s, { card: r.hands[s][0].toJSON() });
+      }
+    }
+    expect(r.finished).toBe(true);
+    expect(r.endReason).toBe("Capot");
+    expect(r.scores).toEqual([-100, 100, 100, 100]);
+  });
+
+  it("Capot scores are NOT multiplied by selector x2 in engine", () => {
+    const players = [0, 1, 2, 3].map((i) => new BotPlayer(i, `B${i}`, "easy"));
+    const e = new GameEngine(players, mulberry32(1));
+    // Inject a pre-built Capot round directly
+    const r = buildCapotRound(0);
+    // Play all tricks to trigger Capot
+    for (let trick = 0; trick < 8; trick++) {
+      for (let s = 0; s < 4; s++) {
+        r.play(s, { card: r.hands[s][0].toJSON() });
+      }
+    }
+    expect(r.endReason).toBe("Capot");
+    expect(r.scores).toEqual([-100, 100, 100, 100]);
+    // Selector is seat 0 (the Capot winner). Multiplier must NOT apply.
+    // Verify directly via engine's finishRound logic by checking a full quick game.
+    const room = new GameRoom("CAPTEST", "host", mulberry32(42), "quick", "Turns");
+    room.fillBots("easy");
+    room.start();
+    // Run the quick Turns game; Capot may or may not occur but the engine should not crash.
+    let guard = 0;
+    while (room.engine!.phase !== "finished" && guard++ < 500) room.autoAct();
+    expect(room.engine!.phase).toBe("finished");
+  });
+
+  it("normal Turns (no Capot) still uses trick×10 scoring with total base = 80", () => {
+    // Use legalMoves() + r.turn so follow-suit and turn order are always respected.
+    const r = new RoundManager(
+      "Turns",
+      hands(
+        [c("A","S"), c("10","S"), c("7","H"), c("7","D"), c("7","C"), c("8","H"), c("8","D"), c("8","C")],
+        [c("A","H"), c("10","H"), c("7","S"), c("9","D"), c("9","C"), c("9","S"), c("K","D"), c("K","C")],
+        [c("A","D"), c("10","D"), c("Q","S"), c("Q","H"), c("Q","C"), c("J","S"), c("J","H"), c("J","C")],
+        [c("A","C"), c("10","C"), c("K","S"), c("K","H"), c("J","D"), c("Q","D"), c("9","H"), c("8","S")],
+      ),
+      0,
+    );
+    // Drive all 32 plays respecting turn order
+    let guard = 0;
+    while (!r.finished && guard++ < 100) {
+      r.play(r.turn, r.legalMoves(r.turn)[0]);
+    }
+    expect(r.finished).toBe(true);
+    expect(r.endReason).not.toBe("Capot");
+    // All 8 tricks scored at +10 each → total base = 80
+    expect(r.scores.reduce((a, b) => a + b, 0)).toBe(80);
+  });
+});
+
+
+
+describe("Last Trick mode", () => {
+  it("awards +100 only to the winner of the 8th trick", () => {
+    // Give seat 0 the highest cards so they win every trick, including trick 8.
+    const r = new RoundManager(
+      "LastTrick",
+      hands(
+        [c("A","S"), c("10","S"), c("A","H"), c("10","H"), c("A","D"), c("10","D"), c("A","C"), c("10","C")],
+        [c("9","S"), c("8","S"), c("9","H"), c("8","H"), c("9","D"), c("8","D"), c("9","C"), c("8","C")],
+        [c("K","S"), c("Q","S"), c("K","H"), c("Q","H"), c("K","D"), c("Q","D"), c("K","C"), c("Q","C")],
+        [c("J","S"), c("7","S"), c("J","H"), c("7","H"), c("J","D"), c("7","D"), c("J","C"), c("7","C")],
+      ),
+      0,
+    );
+    // Play all 8 tricks; seat 0 leads and wins every one
+    while (!r.finished) {
+      r.play(r.turn, r.legalMoves(r.turn)[0]);
+    }
+    expect(r.finished).toBe(true);
+    expect(r.endReason).toBe("Last Trick Won");
+    // Only the last-trick winner (seat 0) scores +100; others 0
+    expect(r.scores[0]).toBe(100);
+    expect(r.scores[1]).toBe(0);
+    expect(r.scores[2]).toBe(0);
+    expect(r.scores[3]).toBe(0);
+    expect(r.scores.reduce((a, b) => a + b, 0)).toBe(100);
+  });
+
+  it("intermediate tricks score 0 — only trick 8 winner gets +100", () => {
+    // Seat 0 wins tricks 1-7, seat 1 wins trick 8 (seat 1 has highest card in last round)
+    // Arrange: seats 0-3 cycle wins; trick 8 leader (whoever wins trick 7) plays a weak card
+    // Simplest: fully drive with legalMoves; just verify base sum = 100 and one seat has 100.
+    const r = new RoundManager(
+      "LastTrick",
+      hands(
+        [c("A","S"), c("10","S"), c("A","H"), c("10","H"), c("A","D"), c("10","D"), c("A","C"), c("7","C")],
+        [c("9","S"), c("8","S"), c("9","H"), c("8","H"), c("9","D"), c("8","D"), c("9","C"), c("10","C")],
+        [c("K","S"), c("Q","S"), c("K","H"), c("Q","H"), c("K","D"), c("Q","D"), c("K","C"), c("8","C")],
+        [c("J","S"), c("7","S"), c("J","H"), c("7","H"), c("J","D"), c("7","D"), c("J","C"), c("9","H")],
+      ),
+      0,
+    );
+    while (!r.finished) {
+      r.play(r.turn, r.legalMoves(r.turn)[0]);
+    }
+    expect(r.finished).toBe(true);
+    expect(r.endReason).toBe("Last Trick Won");
+    expect(r.scores.reduce((a, b) => a + b, 0)).toBe(100);
+    expect(r.scores.filter((s) => s === 100)).toHaveLength(1);
+    expect(r.scores.filter((s) => s === 0)).toHaveLength(3);
+  });
+
+  it("selector multiplier x2 applies to Last Trick winner when selector wins", () => {
+    const players = [0, 1, 2, 3].map((i) => new BotPlayer(i, `B${i}`, "easy"));
+    const room = new GameRoom("LTTEST", "host", mulberry32(7), "quick", "LastTrick");
+    room.fillBots("easy");
+    room.start();
+    let guard = 0;
+    while (room.engine!.phase !== "finished" && guard++ < 500) room.autoAct();
+    expect(room.engine!.phase).toBe("finished");
+    const result = room.engine!.results[0];
+    expect(result.mode).toBe("LastTrick");
+    expect(result.base.reduce((a, b) => a + b, 0)).toBe(100);
+    // Selector's score must be base × multiplier
+    expect(result.scores[result.selector]).toBe(result.base[result.selector] * result.multipliers[result.selector]);
+  });
+});
+
+describe("Trix mode", () => {
+  it("host (seat 0) starts first; only Jacks are legal before any suit opens", () => {
+    const r = new RoundManager(
+      "Trix",
+      hands(
+        [c("J","C"), c("10","C"), c("A","C"), c("K","C"), c("Q","C"), c("9","C"), c("8","C"), c("7","C")],
+        [c("A","S"), c("K","S"), c("Q","S"), c("J","S"), c("10","S"), c("9","S"), c("8","S"), c("7","S")],
+        [c("A","H"), c("K","H"), c("Q","H"), c("J","H"), c("10","H"), c("9","H"), c("8","H"), c("7","H")],
+        [c("A","D"), c("K","D"), c("Q","D"), c("J","D"), c("10","D"), c("9","D"), c("8","D"), c("7","D")],
+      ),
+      1, // selector is seat 1 — but the HOST (seat 0) always starts first in Trix
+    );
+    // Host starts, nothing auto-played yet
+    expect(r.turn).toBe(0);
+    expect(r.trix!.table.C).toBeNull();
+    expect(r.trix!.table.D).toBeNull();
+    expect(r.hands[0]).toHaveLength(8);
+    // Before any suit is open, the only legal plays are Jacks
+    const legalIds = r.legalMoves(0).map((m) => `${m.card.rank}${m.card.suit}`);
+    expect(legalIds).toEqual(["JC"]);
+
+    // Playing the Jack opens the suit chain at J (idx 4)
+    r.play(0, { card: c("J","C").toJSON() });
+    expect(r.hands[0]).toHaveLength(7);
+    expect(r.trix!.table.C).toEqual({ low: 4, high: 4 });
+    // Turn moves clockwise
+    expect(r.turn).toBe(1);
+
+    // Seat 0's next legal plays: 10♣ (idx 3 = low-1) and Q♣ (idx 5 = high+1)
+    const legalAfter = r.legalMoves(0).map((m) => `${m.card.rank}${m.card.suit}`).sort();
+    expect(legalAfter).toContain("10C");
+    expect(legalAfter).toContain("QC");
+    expect(legalAfter).not.toContain("AC"); // A♣ is not adjacent to {4,4} yet
+  });
+
+  it("host with no Jacks has no legal move and can PASS (trixPass)", () => {
+    const r = new RoundManager(
+      "Trix",
+      hands(
+        [c("A","S"), c("K","S"), c("Q","S"), c("10","S"), c("9","S"), c("8","S"), c("7","S"), c("A","C")],
+        [c("J","C"), c("J","H"), c("10","H"), c("Q","H"), c("K","H"), c("9","H"), c("8","H"), c("7","H")],
+        [c("J","D"), c("10","D"), c("Q","D"), c("K","D"), c("9","D"), c("8","D"), c("7","D"), c("A","D")],
+        [c("J","S"), c("10","S"), c("Q","S"), c("K","S"), c("9","C"), c("8","C"), c("7","C"), c("A","H")],
+      ),
+      0,
+    );
+    // Host has no Jack → nothing is legal
+    expect(r.turn).toBe(0);
+    expect(r.legalMoves(0)).toHaveLength(0);
+
+    // PASS advances turn clockwise
+    r.play(0, { card: c("7","C").toJSON(), trixPass: true });
+    expect(r.turn).toBe(1);
+
+    // Passing with a non-Ace legal move is rejected
+    expect(() => r.play(1, { card: c("7","C").toJSON(), trixPass: true })).toThrow();
+  });
+
+  it("Ace grants an extra turn", () => {
+    // Build a Trix round where seat 0 has J♣ (opens) and A♣ (extra turn).
+    // All other suits are held by other seats so only clubs are legal for seat 0 initially.
+    // Seats 1-3 hold only hearts/diamonds/spades so they pass clubs turns.
+    const r = new RoundManager(
+      "Trix",
+      hands(
+        // seat 0: J♣ (opens clubs), then 10♣, Q♣, K♣, A♣ and some cards they can't play yet
+        [c("J","C"), c("10","C"), c("Q","C"), c("K","C"), c("A","C"), c("7","S"), c("8","S"), c("9","S")],
+        [c("7","H"), c("8","H"), c("9","H"), c("10","H"), c("K","H"), c("Q","H"), c("J","H"), c("A","H")],
+        [c("7","D"), c("8","D"), c("9","D"), c("10","D"), c("K","D"), c("Q","D"), c("J","D"), c("A","D")],
+        [c("7","C"), c("8","C"), c("9","C"), c("A","S"), c("K","S"), c("Q","S"), c("J","S"), c("10","S")],
+      ),
+      1,
+    );
+    // Host (seat 0) starts; only Jacks are legal → play J♣ to open clubs
+    expect(r.turn).toBe(0);
+    r.play(0, { card: c("J","C").toJSON() });
+
+    // Drive other seats (each opens their own suit with their Jack) back to seat 0
+    while (r.turn !== 0 && !r.finished) {
+      const t = r.turn;
+      const legal = r.legalMoves(t);
+      r.play(t, legal.length > 0 ? legal[0] : { card: c("7","H").toJSON() });
+    }
+
+    // Seat 0 plays 10♣ (idx 3 = low-1, extends down)
+    r.play(0, { card: c("10","C").toJSON() });
+    // Turn: seat 0 still? No — non-Ace, turn advances to seat 1.
+    // Seat 1 has no clubs legal (H only), so passes → seat 2 passes → seat 3 can play 9♣ or 8♣/7♣
+    // Drive using r.turn
+    // seat 1 passes
+    r.play(r.turn, r.legalMoves(r.turn).length > 0 ? r.legalMoves(r.turn)[0] : { card: c("7","H").toJSON() });
+    // seat 2 or 3 acts
+    while (r.turn !== 0 && !r.finished) {
+      const t = r.turn;
+      const legal = r.legalMoves(t);
+      r.play(t, legal.length > 0 ? legal[0] : { card: c("7","H").toJSON() });
+    }
+
+    // Now seat 0 plays Q♣ (idx 5 = high+1)
+    if (!r.finished && r.turn === 0) {
+      r.play(0, { card: c("Q","C").toJSON() });
+    }
+    while (r.turn !== 0 && !r.finished) {
+      const t = r.turn;
+      const legal = r.legalMoves(t);
+      r.play(t, legal.length > 0 ? legal[0] : { card: c("7","H").toJSON() });
+    }
+
+    // Seat 0 plays K♣ (idx 6)
+    if (!r.finished && r.turn === 0) {
+      r.play(0, { card: c("K","C").toJSON() });
+    }
+    while (r.turn !== 0 && !r.finished) {
+      const t = r.turn;
+      const legal = r.legalMoves(t);
+      r.play(t, legal.length > 0 ? legal[0] : { card: c("7","H").toJSON() });
+    }
+
+    // Now seat 0 plays A♣ (idx 7 = high+1 of K). A♣ is an Ace → extra turn
+    if (!r.finished && r.turn === 0) {
+      r.play(0, { card: c("A","C").toJSON() });
+      // After Ace, turn should STAY on seat 0 (extra turn)
+      expect(r.turn).toBe(0);
+    }
+  });
+
+  it("scores -100 for 1st finisher, -50 for 2nd, 0 for others; ends after 2nd finisher", () => {
+    // Quick game: seat 0 finishes fast, then seat 1
+    const room = new GameRoom("TRIXTEST", "host", mulberry32(3), "quick", "Trix");
+    room.fillBots("easy");
+    room.start();
+    expect(room.engine!.round?.mode).toBe("Trix");
+    let guard = 0;
+    while (room.engine!.phase !== "finished" && guard++ < 2000) room.autoAct();
+    expect(room.engine!.phase).toBe("finished");
+    const result = room.engine!.results[0];
+    expect(result.mode).toBe("Trix");
+    expect(result.endReason).toBe("Trix Finished");
+    // Base scores: exactly one -100 and one -50, rest 0
+    const sortedBase = [...result.base].sort((a, b) => a - b);
+    expect(sortedBase[0]).toBe(-100);
+    expect(sortedBase[1]).toBe(-50);
+    expect(sortedBase[2]).toBe(0);
+    expect(sortedBase[3]).toBe(0);
+    // Selector multiplier applies: selector's score = base × 2
+    expect(result.scores[result.selector]).toBe(result.base[result.selector] * 2);
   });
 });

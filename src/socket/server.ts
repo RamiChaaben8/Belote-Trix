@@ -3,7 +3,7 @@ import { Server, Socket } from "socket.io";
 import { decode } from "next-auth/jwt";
 import { z } from "zod";
 import { GameRoom } from "@/game-engine/room";
-import { Difficulty, EngineEvent } from "@/types";
+import { Difficulty, EngineEvent, GameType, ModeId } from "@/types";
 import { saveGame } from "@/services/persistence";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -21,9 +21,11 @@ function makeCode(): string {
 const moveSchema = z.object({
   card: z.object({ suit: z.enum(["H", "D", "C", "S"]), rank: z.enum(["7", "8", "9", "10", "J", "Q", "K", "A"]) }),
   aceValue: z.union([z.literal(1), z.literal(11)]).optional(),
+  trixPass: z.boolean().optional(),
 });
-const modeSchema = z.enum(["KingOfHearts", "Diamonds", "Queens", "FiftyOne"]);
+const modeSchema = z.enum(["KingOfHearts", "Diamonds", "Queens", "Turns", "LastTrick", "Trix", "FiftyOne"]);
 const difficultySchema = z.enum(["easy", "medium", "hard"]);
+const gameTypeSchema = z.enum(["full", "quick"]);
 
 interface Ack {
   (res: { ok: boolean; error?: string; code?: string }): void;
@@ -78,7 +80,12 @@ export function attachSocketServer(httpServer: HttpServer): Server {
     const seat = e.actor()!;
     const p = room.seats[seat]!;
     const humanAbsent = !p.isBot && !p.connected;
-    if (!p.isBot && !humanAbsent) return;
+    if (!p.isBot && !humanAbsent) {
+      // Connected humans act themselves — in Trix they press PASS when they have
+      // no legal move (or only Ace plays). Bots / absent humans fall through to
+      // the auto-act timer below.
+      return;
+    }
 
     const isFifty = e.phase === "playing" && e.round?.mode === "FiftyOne";
     const isSelectingPhase = e.phase === "selecting";
@@ -87,20 +94,24 @@ export function attachSocketServer(httpServer: HttpServer): Server {
     if (humanAbsent) {
       delay = Math.max(500, DISCONNECT_GRACE_MS - (Date.now() - (p.disconnectedAt ?? Date.now())));
     } else if (isSelectingPhase && p.isBot) {
-      // After a round ends, give clients time to read the round summary before bots pick a mode.
+      // After a round ends, give clients time to read the round summary and watch resolution animations before bots pick a mode.
       // heavy=true means we just finished a round — use a longer pause.
-      delay = heavy ? 3500 : 1200;
-    } else if (isFifty && p.isBot) {
+      delay = heavy ? 6500 : 1800;
+    } else if (p.isBot) {
       const diff = room.difficulty;
-      if (diff === "easy") delay = 1500 + Math.random() * 500;
-      else if (diff === "medium") delay = 2000 + Math.random() * 1000;
-      else delay = 2500 + Math.random() * 1500;
+      if (diff === "easy") {
+        delay = 1000 + Math.random() * 500; // 1000ms - 1500ms
+      } else if (diff === "medium") {
+        delay = 1500 + Math.random() * 700; // 1500ms - 2200ms
+      } else {
+        delay = 2000 + Math.random() * 1000; // 2000ms - 3000ms
+      }
     } else {
       delay = heavy ? 1800 : 900;
     }
 
-    // Show "thinking…" indicator for bots in Fifty One mode
-    if (isFifty && p.isBot && !humanAbsent) {
+    // Show "thinking…" indicator for bots across all modes
+    if (p.isBot && !humanAbsent) {
       setThinking(room, seat);
       broadcast(room);
     }
@@ -108,7 +119,7 @@ export function attachSocketServer(httpServer: HttpServer): Server {
     room.timer = setTimeout(async () => {
       room.timer = null;
       if (!room.actorIsAuto(DISCONNECT_GRACE_MS)) return schedule(room);
-      if (isFifty && p.isBot) {
+      if (p.isBot) {
         clearThinking(room, seat);
       }
       try {
@@ -197,13 +208,26 @@ export function attachSocketServer(httpServer: HttpServer): Server {
 
     socket.on(
       "create_room",
-      guard(z.object({ difficulty: difficultySchema.optional() }), async (d) => {
-        const room = new GameRoom(makeCode(), clientId);
-        if (d.difficulty) room.difficulty = d.difficulty as Difficulty;
-        rooms.set(room.code, room);
-        joinInto(room);
-        await broadcast(room);
-      }),
+      guard(
+        z.object({
+          difficulty: difficultySchema.optional(),
+          gameType: gameTypeSchema.optional(),
+          quickMode: modeSchema.optional(),
+        }),
+        async (d) => {
+          const room = new GameRoom(
+            makeCode(),
+            clientId,
+            Math.random,
+            (d.gameType as GameType) ?? "full",
+            (d.quickMode as ModeId) ?? "KingOfHearts",
+          );
+          if (d.difficulty) room.difficulty = d.difficulty as Difficulty;
+          rooms.set(room.code, room);
+          joinInto(room);
+          await broadcast(room);
+        },
+      ),
     );
 
     socket.on(
@@ -242,6 +266,26 @@ export function attachSocketServer(httpServer: HttpServer): Server {
         const r = requireHost(room);
         if (r.status !== "lobby") throw new Error("Game already started");
         r.difficulty = d.difficulty;
+        await broadcast(r);
+      }),
+    );
+
+    socket.on(
+      "set_game_type",
+      guard(z.object({ gameType: gameTypeSchema }), async (d, room) => {
+        const r = requireHost(room);
+        if (r.status !== "lobby") throw new Error("Game already started");
+        r.gameType = d.gameType;
+        await broadcast(r);
+      }),
+    );
+
+    socket.on(
+      "set_quick_mode",
+      guard(z.object({ quickMode: modeSchema }), async (d, room) => {
+        const r = requireHost(room);
+        if (r.status !== "lobby") throw new Error("Game already started");
+        r.quickMode = d.quickMode;
         await broadcast(r);
       }),
     );

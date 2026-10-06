@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { MODE_LABEL } from "@/lib/utils";
 
 interface ScoreboardPanelProps {
@@ -7,6 +8,7 @@ interface ScoreboardPanelProps {
   totalRounds: number;
   mode: string;
   selectorName: string;
+  isQuickTest?: boolean;
   seats: {
     seat: number;
     name: string;
@@ -21,25 +23,41 @@ export function ScoreboardPanel({
   totalRounds,
   mode,
   selectorName,
+  isQuickTest,
   seats,
 }: ScoreboardPanelProps) {
+  const [collapsed, setCollapsed] = useState(false);
   const sorted = [...seats].sort((a, b) => a.total - b.total);
 
   return (
     <div
-      className="fixed top-20 left-3 z-40 flex flex-col gap-1.5 p-2.5 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-500/30 shadow-2xl text-xs select-none"
-      style={{ width: "clamp(180px, 18vw, 260px)" }}
+      className="fixed top-14 left-2 sm:left-4 z-40 flex flex-col gap-1 p-2 rounded-2xl bg-slate-950/90 backdrop-blur-md border border-amber-500/30 shadow-2xl text-xs select-none transition-all"
+      style={{ width: collapsed ? "auto" : "clamp(160px, 16vw, 220px)" }}
       data-testid="scoreboard-panel"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-1 pb-1 border-b border-slate-800">
-        <span className="font-extrabold text-[10px] text-emerald-400 uppercase tracking-wider">
-          🏆 Lowest Wins
-        </span>
-        <span className="text-[10px] text-slate-400 font-mono">
-          R{roundNumber}/{totalRounds}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className="font-extrabold text-[10px] text-emerald-400 uppercase tracking-wider">
+            🏆 Lowest Wins
+          </span>
+          {isQuickTest && (
+            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase tracking-tight">
+              TEST MODE
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="text-[10px] text-slate-400 hover:text-white px-1 font-mono rounded bg-slate-900 border border-slate-800"
+          title={collapsed ? "Expand scoreboard" : "Collapse scoreboard"}
+        >
+          {collapsed ? `R${roundNumber} ▼` : `R${roundNumber}/${totalRounds} ▲`}
+        </button>
       </div>
+
+      {!collapsed && (
+        <>
 
       {/* Mode & Selector */}
       <div className="flex flex-col gap-0.5 text-[11px]">
@@ -83,6 +101,8 @@ export function ScoreboardPanel({
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }

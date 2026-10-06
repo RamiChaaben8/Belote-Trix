@@ -24,6 +24,7 @@ interface Props {
   recentPlays: { seat: number; card: CardData; delta: number; aceValue?: 1 | 11 | null }[];
   moveLog: FiftyOneMove[];
   names: string[];
+  avatars?: string[];
   youSeat: number;
   thinkingSeats: number[];
   selectorSeat: number | null;
@@ -97,18 +98,25 @@ function ThinkingDots() {
 // ─────────────────────────────────────────────
 // Main Component
 // ─────────────────────────────────────────────
+import { useSettings } from "@/hooks/useSettings";
+import { playSound } from "@/lib/sound";
+
 export function FiftyOneCenter({
   total,
   direction,
   moveLog,
   names,
+  avatars,
   thinkingSeats,
   selectorSeat,
   turnOrder,
 }: Props) {
+  const { sound } = useSettings();
   const [jackEffect, setJackEffect] = useState(false);
   const [aceAnnouncement, setAceAnnouncement] = useState<{ name: string; value: 1 | 11 } | null>(null);
-  const [exactly51, setExactly51] = useState(false);
+  const [showLoser, setShowLoser] = useState(false);
+  const [showWinner, setShowWinner] = useState(false);
+  const [loserSeat, setLoserSeat] = useState<number | null>(null);
   const [winnerSeat, setWinnerSeat] = useState<number | null>(null);
   const prevLogLenRef = useRef(moveLog.length);
 
@@ -131,17 +139,52 @@ export function FiftyOneCenter({
     }
   }, [moveLog, names]);
 
-  // Exactly 51
+  // When total reaches or exceeds 51:
+  // Exact 51:
+  //   1. Freeze input
+  //   2. Highlight winner
+  //   3. Show center popup: 🏆 EXACTLY 51, Winner: PlayerName, Base: 510, Multiplier: x2 if selector, Final: 1020 / 510
+  //   4. Wait 3 seconds, update scoreboard / start next round
+  // Exceeds 51 (> 51):
+  //   Show BUSTED popup, PlayerName, Total, Exceeded 51, wait 3s
   useEffect(() => {
-    if (total === 51) {
-      setExactly51(true);
+    if (moveLog.length > 0) {
       const last = moveLog[moveLog.length - 1];
-      if (last) setWinnerSeat(last.seat);
+      const cardVal = last.card.rank === "A" && last.aceValue != null
+        ? last.aceValue
+        : last.delta;
+      console.log("Total before play:", last.prevTotal);
+      console.log("Card value:", cardVal);
+      console.log("New total:", total);
+      console.log("CHECK WIN:", total === 51);
+      console.log("CHECK LOSS:", total > 51);
+    }
+
+    if (total === 51) {
+      const last = moveLog[moveLog.length - 1];
+      if (last) {
+        console.log("RESULT SCREEN OPENED");
+        setWinnerSeat(last.seat);
+        setShowWinner(true);
+        setShowLoser(false);
+        playSound("win", sound);
+      }
+    } else if (total > 51) {
+      const last = moveLog[moveLog.length - 1];
+      if (last) {
+        console.log("RESULT SCREEN OPENED");
+        setLoserSeat(last.seat);
+        setShowLoser(true);
+        setShowWinner(false);
+        playSound("bust", sound);
+      }
     } else {
-      setExactly51(false);
+      setShowLoser(false);
+      setShowWinner(false);
+      setLoserSeat(null);
       setWinnerSeat(null);
     }
-  }, [total, moveLog]);
+  }, [total, moveLog, sound]);
 
   // Discard pile: last 10 moves, oldest→newest (newest rendered last = on top)
   const pileCards = moveLog.slice(-10);
@@ -207,11 +250,11 @@ export function FiftyOneCenter({
                     <PlayingCard
                       card={m.card}
                       size="md"
-                      isWinning={isTop && exactly51}
+                      isWinning={isTop && total === 51}
                       className={
                         isTop
-                          ? exactly51
-                            ? "ring-4 ring-yellow-400 border-yellow-300"
+                          ? total === 51
+                            ? "ring-4 ring-rose-500 border-rose-400 shadow-[0_0_35px_rgba(244,63,94,0.9)] animate-pulse"
                             : "ring-2 ring-amber-400/60 border-amber-300/40"
                           : "opacity-90"
                       }
@@ -253,8 +296,8 @@ export function FiftyOneCenter({
           {/* Score hub */}
           <div
             className={`flex flex-col items-center justify-center rounded-2xl border-2 px-4 py-2.5 shadow-2xl transition-all duration-300
-              ${exactly51
-                ? "border-yellow-400 bg-yellow-950/80 shadow-[0_0_50px_rgba(250,204,21,0.85)]"
+              ${total === 51
+                ? "border-rose-500 bg-rose-950/90 shadow-[0_0_50px_rgba(244,63,94,0.95)]"
                 : total >= 45
                 ? "border-rose-400/80 bg-rose-950/60 shadow-[0_0_25px_rgba(239,68,68,0.5)]"
                 : "border-slate-700/60 bg-slate-900/80"
@@ -266,8 +309,8 @@ export function FiftyOneCenter({
             <span
               data-testid="fifty-total"
               className={`font-black tabular-nums leading-none
-                ${exactly51
-                  ? "text-5xl text-yellow-300 drop-shadow-[0_0_18px_rgba(250,204,21,1)]"
+                ${total === 51
+                  ? "text-5xl text-rose-300 drop-shadow-[0_0_18px_rgba(244,63,94,1)] animate-bounce"
                   : total >= 45
                   ? "text-5xl text-rose-300"
                   : "text-5xl text-amber-200"
@@ -388,44 +431,101 @@ export function FiftyOneCenter({
       </AnimatePresence>
 
       {/* ════════════════════════════════════════════════════════ */}
-      {/* EXACTLY 51 CELEBRATION                                  */}
+      {/* FIFTY ONE - LOSER ANIMATION (BUSTED / EXCEEDED 51)       */}
       {/* ════════════════════════════════════════════════════════ */}
       <AnimatePresence>
-        {exactly51 && winnerSeat !== null && (
+        {showLoser && loserSeat !== null && (
           <motion.div
-            key="exactly51"
-            initial={{ opacity: 0, scale: 0.75 }}
+            key="loser"
+            initial={{ opacity: 0, scale: 0.6 }}
             animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ type: "spring", stiffness: 220, damping: 18 }}
+            className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+          >
+            {/* Screen shake & Red pulse backdrop */}
+            <div className="absolute -inset-10 rounded-full animate-red-pulse pointer-events-none" />
+
+            <div className="relative flex flex-col items-center gap-2.5 px-8 py-6 rounded-3xl bg-slate-950/98 border-4 border-rose-500 shadow-[0_0_80px_rgba(244,63,94,0.95)] animate-screen-shake text-center max-w-sm sm:max-w-md">
+              {/* Skull / Bomb header */}
+              <div className="flex items-center gap-2 text-3xl sm:text-4xl animate-bounce">
+                <span>💥</span>
+                <span className="font-black text-rose-500 tracking-wider">BUSTED</span>
+                <span>💥</span>
+              </div>
+
+              {/* Loser Avatar with glowing ring */}
+              <div className="relative my-1">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center text-4xl sm:text-5xl border-4 border-rose-500 bg-rose-950 shadow-[0_0_30px_rgba(244,63,94,0.8)]">
+                  {avatars?.[loserSeat] ?? "💀"}
+                </div>
+                <span className="absolute -bottom-1 -right-1 text-2xl">💀</span>
+              </div>
+
+              {/* Loser Name */}
+              <span className="text-xl sm:text-2xl font-black text-rose-300 drop-shadow-[0_0_12px_rgba(244,63,94,0.9)] uppercase tracking-wide">
+                Player: {names[loserSeat] ?? `Seat ${loserSeat + 1}`}
+              </span>
+
+              <div className="flex items-center gap-2 text-sm font-bold text-rose-200">
+                <span>Total: {total}</span>
+                <span>•</span>
+                <span className="text-rose-400 font-black">Exceeded 51</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ════════════════════════════════════════════════════════ */}
+      {/* FIFTY ONE - WINNER DISPLAY (EXACTLY 51)                  */}
+      {/* ════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {showWinner && winnerSeat !== null && (
+          <motion.div
+            key="winner"
+            initial={{ opacity: 0, scale: 0.75, y: 15 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85 }}
             transition={{ type: "spring", stiffness: 200, damping: 18 }}
             className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
           >
-            <div className="relative flex flex-col items-center gap-2 px-8 py-5 rounded-3xl bg-slate-950/97 border-2 border-yellow-400 shadow-[0_0_70px_rgba(250,204,21,0.9)]">
-              <div className="flex gap-1.5 text-lg">
-                {["🎉", "⭐", "🎊", "⭐", "🎉"].map((e, i) => (
-                  <motion.span
-                    key={i}
-                    animate={{ y: [0, -6, 0] }}
-                    transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.14 }}
-                  >
-                    {e}
-                  </motion.span>
-                ))}
+            <div className="relative flex flex-col items-center gap-2.5 px-8 py-5 rounded-3xl bg-slate-950/98 border-2 border-amber-400 shadow-[0_0_70px_rgba(251,191,36,0.9)] text-center min-w-[280px]">
+              <div className="flex items-center gap-1.5 text-amber-300 font-black text-base sm:text-lg uppercase tracking-widest">
+                <span className="text-xl">🏆</span>
+                <span>EXACTLY 51</span>
               </div>
-              <span className="text-xl sm:text-2xl font-black text-yellow-300 drop-shadow-[0_0_15px_rgba(250,204,21,1)]">
-                🎉 EXACTLY 51! 🎉
-              </span>
-              <div className="text-sm font-bold text-white">
-                Winner: <span className="text-yellow-300">{names[winnerSeat] ?? `Seat ${winnerSeat + 1}`}</span>
-              </div>
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Points Awarded</span>
-                <span className="text-2xl font-black text-emerald-300">
-                  {selectorSeat === winnerSeat ? "+1020" : "+510"}
+
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-2xl">{avatars?.[winnerSeat] ?? "🙂"}</span>
+                <span className="text-base sm:text-lg font-black text-white">
+                  Winner: <span className="text-amber-300">{names[winnerSeat] ?? `Seat ${winnerSeat + 1}`}</span>
                 </span>
-                {selectorSeat === winnerSeat && (
-                  <span className="text-[10px] text-amber-300 font-bold">510 × 2 (Selector!)</span>
+              </div>
+
+              {/* Score / Multiplier breakdown */}
+              <div className="flex items-center justify-center gap-4 py-1.5 px-3 rounded-xl bg-slate-900/90 border border-amber-400/30 text-xs font-mono">
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-slate-400 uppercase">Base Score</span>
+                  <span className="text-emerald-400 font-bold">510</span>
+                </div>
+                {selectorSeat === winnerSeat ? (
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] text-purple-400 uppercase">Multiplier</span>
+                    <span className="text-purple-300 font-bold">x2</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center">
+                    <span className="text-[10px] text-slate-400 uppercase">Multiplier</span>
+                    <span className="text-slate-300 font-bold">x1</span>
+                  </div>
                 )}
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-amber-400 uppercase">Final Score</span>
+                  <span className="text-amber-300 font-black text-sm">
+                    {selectorSeat === winnerSeat ? "1020" : "510"}
+                  </span>
+                </div>
               </div>
             </div>
           </motion.div>

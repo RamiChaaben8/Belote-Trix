@@ -33,7 +33,33 @@ export function RoundSummaryModal({
     : endReason === "All Diamonds Captured" ? "♦"
     : endReason === "All Queens Captured" ? "👸"
     : endReason === "51 Reached" ? "🎯"
+    : endReason === "Cards Depleted" ? "🃏"
+    : endReason === "No Legal Moves Left" ? "🛑"
     : "✅";
+
+  const isTurns = mode === "Turns";
+  const isCapot = endReason === "Capot";
+  const isLastTrick = mode === "LastTrick";
+  const isTrix = mode === "Trix";
+
+  // In Capot the scores are -100/+100 (not trick×10), so derive trick counts separately:
+  // the Capot winner is the seat with score === -100; they won 8 tricks, others 0.
+  const capotWinnerSeat = isCapot ? finalScores.findIndex((s) => s === -100) : -1;
+
+  // Trix: 1st place has base -100, 2nd has base -50
+  const trixFirst = isTrix ? baseScores.findIndex((b) => b === -100) : -1;
+  const trixSecond = isTrix ? baseScores.findIndex((b) => b === -50) : -1;
+  const trixPlace = (idx: number) => {
+    if (idx === trixFirst) return "1st";
+    if (idx === trixSecond) return "2nd";
+    return "—";
+  };
+
+  const trickCountFor = (idx: number): number | null => {
+    if (!isTurns) return null;
+    if (isCapot) return idx === capotWinnerSeat ? 8 : 0;
+    return (baseScores[idx] ?? 0) / 10;
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
@@ -50,16 +76,45 @@ export function RoundSummaryModal({
           <h2 className="text-2xl font-black text-white mt-1">
             {MODE_LABEL[mode] || mode} Summary
           </h2>
+
           {/* End reason banner */}
-          {endReason && (
+          {isCapot ? (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/80 border border-amber-400/60 text-amber-300 font-black text-sm shadow-[0_0_20px_rgba(251,191,36,0.4)]">
+              <span>🏆</span>
+              <span>CAPOT ACHIEVED</span>
+              <span>🏆</span>
+            </div>
+          ) : isTrix ? (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-950/80 border border-violet-400/60 text-violet-300 font-black text-sm">
+              <span>🃏</span>
+              <span>🏆 TRIX FINISHED</span>
+            </div>
+          ) : isLastTrick ? (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-rose-950/60 border border-rose-500/40 text-rose-300 font-bold text-sm">
+              <span>🏆</span>
+              <span>Last Trick Won</span>
+            </div>
+          ) : isTurns ? (
+            <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-teal-950/60 border border-teal-500/40 text-teal-300 font-bold text-sm">
+              <span>🔄</span>
+              <span>Turns Completed</span>
+            </div>
+          ) : endReason ? (
             <div className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-950/60 border border-amber-500/40 text-amber-300 font-bold text-sm">
               <span>{reasonEmoji}</span>
               <span>{endReason}</span>
             </div>
+          ) : null}
+
+          {isCapot ? (
+            <p className="text-xs text-amber-400/80 mt-2 font-semibold">
+              Capot overrides all scoring — no multiplier applies.
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400 mt-2">
+              Selector ({players[selectorSeat]?.name}) receives <b>x2 Double Points</b>!
+            </p>
           )}
-          <p className="text-xs text-slate-400 mt-2">
-            Selector ({players[selectorSeat]?.name}) receives <b>x2 Double Points</b>!
-          </p>
         </div>
 
         {/* Breakdown Table */}
@@ -68,8 +123,10 @@ export function RoundSummaryModal({
             <thead>
               <tr className="border-b border-slate-800 text-xs font-bold uppercase text-slate-400">
                 <th className="py-2.5 px-3">Player</th>
-                <th className="py-2.5 px-3 text-center">Base Score</th>
-                <th className="py-2.5 px-3 text-center">Multiplier</th>
+                {isTurns && <th className="py-2.5 px-3 text-center">Tricks</th>}
+                {isTrix && <th className="py-2.5 px-3 text-center">Place</th>}
+                {!isCapot && <th className="py-2.5 px-3 text-center">Base Score</th>}
+                {!isCapot && !isTrix && <th className="py-2.5 px-3 text-center">Multiplier</th>}
                 <th className="py-2.5 px-3 text-right">Final Score</th>
               </tr>
             </thead>
@@ -79,43 +136,82 @@ export function RoundSummaryModal({
                 const base = baseScores[idx] ?? 0;
                 const mult = multipliers[idx] ?? 1;
                 const final = finalScores[idx] ?? 0;
+                const tricks = trickCountFor(idx);
+                const isCapotWinner = isCapot && idx === capotWinnerSeat;
+                const isTrixPodium = isTrix && (idx === trixFirst || idx === trixSecond);
 
                 return (
                   <tr
                     key={p.seat}
                     className={`transition-colors ${
-                      isSelector ? "bg-purple-950/30" : "hover:bg-slate-900/40"
+                      isCapotWinner
+                        ? "bg-amber-950/40"
+                        : isTrixPodium
+                        ? "bg-violet-950/30"
+                        : isSelector && !isCapot && !isTrix
+                        ? "bg-purple-950/30"
+                        : "hover:bg-slate-900/40"
                     }`}
                   >
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{p.avatar}</span>
-                        <span className="font-semibold text-white truncate max-w-[120px]">
+                        <span className="font-semibold text-white truncate max-w-[110px]">
                           {p.name}
                         </span>
-                        {isSelector && (
+                        {isCapotWinner && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/80 text-amber-200 border border-amber-400/40">
+                            🏆 Capot
+                          </span>
+                        )}
+                        {!isCapot && !isTrix && isSelector && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-900/80 text-purple-200 border border-purple-400/40">
+                            Selector
+                          </span>
+                        )}
+                        {isTrix && isSelector && (
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-900/80 text-purple-200 border border-purple-400/40">
                             Selector
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="py-3 px-3 text-center font-mono text-slate-300">
-                      {base}
-                    </td>
-                    <td className="py-3 px-3 text-center font-mono font-bold">
-                      <span
-                        className={
-                          mult > 1
-                            ? "text-purple-400 px-1.5 py-0.5 rounded bg-purple-950 border border-purple-500/40"
-                            : "text-slate-400"
-                        }
-                      >
-                        x{mult}
+                    {isTurns && (
+                      <td className="py-3 px-3 text-center font-mono font-bold">
+                        <span className={isCapotWinner ? "text-amber-300" : "text-teal-300"}>
+                          {tricks}
+                        </span>
+                      </td>
+                    )}
+                    {isTrix && (
+                      <td className="py-3 px-3 text-center font-mono font-bold">
+                        <span className={idx === trixFirst ? "text-amber-300" : idx === trixSecond ? "text-slate-300" : "text-slate-600"}>
+                          {trixPlace(idx)}
+                        </span>
+                      </td>
+                    )}
+                    {!isCapot && (
+                      <td className="py-3 px-3 text-center font-mono text-slate-300">
+                        {base}
+                      </td>
+                    )}
+                    {!isCapot && !isTrix && (
+                      <td className="py-3 px-3 text-center font-mono font-bold">
+                        <span
+                          className={
+                            mult > 1
+                              ? "text-purple-400 px-1.5 py-0.5 rounded bg-purple-950 border border-purple-500/40"
+                              : "text-slate-400"
+                          }
+                        >
+                          x{mult}
+                        </span>
+                      </td>
+                    )}
+                    <td className="py-3 px-3 text-right font-mono font-bold text-base">
+                      <span className={isCapotWinner ? "text-rose-400" : final < 0 ? "text-rose-400" : final > 0 ? "text-emerald-400" : "text-slate-500"}>
+                        {final > 0 ? "+" : ""}{final}
                       </span>
-                    </td>
-                    <td className="py-3 px-3 text-right font-mono font-bold text-base text-emerald-400">
-                      +{final}
                     </td>
                   </tr>
                 );

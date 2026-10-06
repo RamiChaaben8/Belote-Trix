@@ -1,7 +1,7 @@
 import { Card } from "./card";
 import { BotPlayer, Player } from "./players";
 import { GameEngine } from "./engine";
-import { Difficulty, EngineEvent, ModeId, Move } from "@/types";
+import { Difficulty, EngineEvent, GameType, ModeId, Move } from "@/types";
 import { sortCards } from "./card";
 
 export interface ChatEntry {
@@ -21,6 +21,8 @@ export class GameRoom {
   engine: GameEngine | null = null;
   status: RoomStatus = "lobby";
   difficulty: Difficulty = "medium";
+  gameType: GameType = "full";
+  quickMode: ModeId = "KingOfHearts";
   readonly createdAt = Date.now();
   events: EngineEvent[] = [];
   timer: ReturnType<typeof setTimeout> | null = null;
@@ -30,7 +32,12 @@ export class GameRoom {
     readonly code: string,
     public hostClientId: string,
     private rng: () => number = Math.random,
-  ) {}
+    gameType: GameType = "full",
+    quickMode: ModeId = "KingOfHearts",
+  ) {
+    this.gameType = gameType;
+    this.quickMode = quickMode;
+  }
 
   seatOf(clientId: string): number | null {
     const i = this.seats.findIndex((p) => p?.clientId === clientId);
@@ -112,7 +119,7 @@ export class GameRoom {
   start(): EngineEvent[] {
     if (this.status !== "lobby") throw new Error("Game already started");
     if (this.seats.some((p) => p === null)) throw new Error("All four seats must be filled");
-    this.engine = new GameEngine(this.seats as Player[], this.rng);
+    this.engine = new GameEngine(this.seats as Player[], this.rng, this.gameType, this.gameType === "quick" ? this.quickMode : null);
     this.status = "playing";
     return this.engine.start();
   }
@@ -184,6 +191,8 @@ export class GameRoom {
       host: this.hostClientId,
       isHost: this.hostClientId === clientId,
       difficulty: this.difficulty,
+      gameType: this.gameType,
+      quickMode: this.quickMode,
       you: seat,
       seats: this.seats.map((p, i) =>
         p
@@ -197,7 +206,7 @@ export class GameRoom {
       modes: e?.modes ?? [],
       remaining: e && seat !== null ? e.remainingModes(seat) : [],
       roundNumber: e?.roundNumber ?? 0,
-      totalRounds: e?.totalRounds ?? 16,
+      totalRounds: e?.totalRounds ?? 28,
       totals: e?.totals ?? [0, 0, 0, 0],
       actor: e?.actor() ?? null,
       hand,
@@ -226,6 +235,8 @@ export class GameRoom {
                     aceValue: p.aceValue ?? null,
                   }))
                 : undefined,
+              trixTable: r!.mode === "Trix" ? r!.trix?.table ?? null : null,
+              trixFinishOrder: r!.mode === "Trix" ? (r!.trix?.finishOrder ?? []) : [],
             }
           : null,
       history: (e?.results ?? []).map((x) => ({

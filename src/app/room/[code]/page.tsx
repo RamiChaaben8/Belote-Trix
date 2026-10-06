@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
+import { useCallback } from "react";
 import { RoomLobby } from "@/components/RoomLobby";
 import { Table } from "@/components/Table";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,13 @@ import { useRoom } from "@/hooks/useRoom";
 export default function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const router = useRouter();
-  const { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, act } =
+  const { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, act } =
     useRoom(code.toUpperCase());
+
+  // Trix PASS — the server validates whether passing is actually allowed.
+  const handleTrixPass = useCallback(async () => {
+    await act("play_card", { card: { suit: "C", rank: "7" }, trixPass: true });
+  }, [act]);
 
   if (!room) {
     return (
@@ -63,7 +69,7 @@ export default function RoomPage() {
 
   // Active game mode: Table takes almost full screen with integrated top-left scoreboard and top-right chat overlay
   return (
-    <div className="relative w-full flex flex-col items-center">
+    <div className="relative w-full max-w-none -mx-4 -my-6 px-2 sm:px-4 flex flex-col items-center">
       {/* Floating leave & status micro bar */}
       <div className="absolute top-2 right-28 sm:right-32 z-40 flex items-center gap-2">
         <Button
@@ -100,6 +106,8 @@ export default function RoomPage() {
         chat={chat}
         act={act}
         gameId={gameId}
+        trixExtraTurnSeat={trixExtraTurnSeat}
+        onTrixPass={handleTrixPass}
       />
     </div>
   );

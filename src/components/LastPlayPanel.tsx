@@ -1,125 +1,106 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { PlayingCard } from "./PlayingCard";
-import { SUIT_SYMBOL } from "@/lib/utils";
 import type { CardData } from "@/types";
 
-export interface LastTrickDisplay {
+export interface LastTrickItem {
   winner: number;
   winnerName: string;
   plays: { seat: number; card: CardData; name: string }[];
-  /** Cards that are "objective" cards for this mode — get a special highlight */
-  highlightCards?: CardData[];
-  trickIndex: number;
 }
 
 interface Props {
-  trick: LastTrickDisplay | null;
+  lastTrick: LastTrickItem | null;
   mode: string;
 }
 
-function isObjectiveCard(card: CardData, mode: string): boolean {
-  if (mode === "KingOfHearts") return card.suit === "H" && card.rank === "K";
-  if (mode === "Diamonds") return card.suit === "D";
-  if (mode === "Queens") return card.rank === "Q";
-  return false;
-}
-
-function modeLabel(mode: string): string {
-  if (mode === "KingOfHearts") return "♥ King of Hearts";
-  if (mode === "Diamonds") return "♦ Diamonds";
-  if (mode === "Queens") return "♛ Queens";
-  return "Last Play";
-}
-
-export function LastPlayPanel({ trick, mode }: Props) {
+export function LastPlayPanel({ lastTrick, mode }: Props) {
   if (mode === "FiftyOne") return null;
 
   return (
-    <div className="absolute bottom-4 right-4 z-30 select-none pointer-events-none">
-      <AnimatePresence mode="wait">
-        {trick && (
-          <motion.div
-            key={trick.trickIndex}
-            initial={{ opacity: 0, x: 20, scale: 0.95 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 20, scale: 0.9 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-            className="rounded-2xl bg-slate-950/90 border border-amber-500/30 backdrop-blur-md shadow-2xl overflow-hidden"
-            style={{ width: 168 }}
-          >
-            {/* Header */}
-            <div className="px-3 py-1.5 border-b border-slate-800/60 flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">
-                {modeLabel(mode)}
-              </span>
-            </div>
+    <div
+      data-testid="last-play-panel"
+      className="fixed bottom-3 right-3 sm:bottom-4 sm:right-4 z-40 select-none pointer-events-auto"
+      style={{ width: "clamp(260px, 24vw, 340px)" }}
+    >
+      <div className="rounded-2xl bg-slate-950/95 border border-amber-500/50 backdrop-blur-md shadow-[0_15px_35px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col">
+        {/* Gold Header */}
+        <div className="px-3 py-1.5 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-amber-950/60 via-slate-900 to-slate-950">
+          <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 drop-shadow-[0_1px_4px_rgba(251,191,36,0.6)]">
+            LAST TRICK
+          </span>
+          {lastTrick && (
+            <span className="text-[10px] font-bold text-amber-300/90 truncate max-w-[170px] flex items-center gap-1">
+              <span>🏆 Winner:</span>
+              <span className="text-white font-extrabold">{lastTrick.winnerName}</span>
+            </span>
+          )}
+        </div>
 
-            {/* Winner line */}
-            <div className="px-3 pt-1.5 pb-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm">🏆</span>
-                <span className="text-[11px] font-bold text-amber-300 truncate">
-                  {trick.winnerName} wins
+        {/* Content Area */}
+        <div className="p-2.5 flex flex-col items-center justify-center min-h-[105px]">
+          {!lastTrick || lastTrick.plays.length === 0 ? (
+            <div className="text-center py-4 text-[11px] text-slate-500 font-medium italic">
+              No tricks completed yet
+            </div>
+          ) : (
+            <div className="w-full flex flex-col items-center gap-1.5">
+              {/* Winner Name Banner (large subtitle if needed) */}
+              <div className="w-full flex items-center justify-between px-1 text-[11px]">
+                <span className="text-slate-400 text-[10px]">Cards Played</span>
+                <span className="text-amber-300 font-bold text-[11px] flex items-center gap-1">
+                  <span>🏆</span>
+                  <span>{lastTrick.winnerName} won</span>
                 </span>
               </div>
-            </div>
 
-            {/* 2×2 card grid */}
-            <div className="grid grid-cols-2 gap-1.5 px-3 pb-3">
-              {trick.plays.map((p) => {
-                const isObj = isObjectiveCard(p.card, mode);
-                const isWinner = p.seat === trick.winner;
-                const isRed = p.card.suit === "H" || p.card.suit === "D";
+              {/* 4 Real Card Graphics (Mini scale) */}
+              <div className="grid grid-cols-4 gap-1.5 sm:gap-2 w-full justify-items-center">
+                {lastTrick.plays.map((p, idx) => {
+                  const isWinningCard = p.seat === lastTrick.winner;
 
-                return (
-                  <motion.div
-                    key={`${p.seat}-${p.card.rank}${p.card.suit}`}
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: 0.05 * trick.plays.indexOf(p) }}
-                    className="flex flex-col items-center gap-0.5"
-                  >
-                    {/* Compact card face */}
-                    <div
-                      className={`
-                        relative w-14 h-[52px] rounded-lg flex flex-col justify-between p-1
-                        bg-gradient-to-b from-white via-slate-50 to-slate-100 border
-                        ${isObj
-                          ? "border-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.8)] ring-2 ring-amber-400"
-                          : isWinner
-                          ? "border-yellow-400/60 shadow-[0_0_6px_rgba(250,204,21,0.5)]"
-                          : "border-slate-300/80 shadow-sm"
-                        }
-                      `}
+                  return (
+                    <motion.div
+                      key={`${p.seat}-${p.card.rank}${p.card.suit}-${idx}`}
+                      initial={{ scale: 0.9, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ duration: 0.2 }}
+                      className="flex flex-col items-center gap-1 w-full"
                     >
-                      {/* Top-left rank+suit */}
-                      <div className={`flex items-center gap-0.5 leading-none ${isRed ? "text-rose-600" : "text-slate-900"}`}>
-                        <span className="text-[11px] font-black">{p.card.rank}</span>
-                        <span className="text-[10px]">{SUIT_SYMBOL[p.card.suit]}</span>
+                      {/* Mini Card container */}
+                      <div
+                        className={`relative rounded-md transition-all ${
+                          isWinningCard
+                            ? "ring-2 ring-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.85)] scale-105"
+                            : "opacity-95"
+                        }`}
+                      >
+                        <PlayingCard
+                          card={p.card}
+                          size="sm"
+                          isWinning={isWinningCard}
+                        />
                       </div>
-                      {/* Center suit watermark */}
-                      <div className={`absolute inset-0 flex items-center justify-center pointer-events-none opacity-15 ${isRed ? "text-rose-500" : "text-slate-700"}`}>
-                        <span className="text-2xl">{SUIT_SYMBOL[p.card.suit]}</span>
-                      </div>
-                      {/* Bottom-right rank+suit (rotated) */}
-                      <div className={`flex items-center gap-0.5 leading-none self-end rotate-180 ${isRed ? "text-rose-600" : "text-slate-900"}`}>
-                        <span className="text-[11px] font-black">{p.card.rank}</span>
-                        <span className="text-[10px]">{SUIT_SYMBOL[p.card.suit]}</span>
-                      </div>
-                    </div>
-                    {/* Player name under card */}
-                    <span className={`text-[9px] font-semibold truncate max-w-[56px] text-center leading-tight ${isWinner ? "text-amber-300" : "text-slate-500"}`}>
-                      {p.name}
-                    </span>
-                  </motion.div>
-                );
-              })}
+
+                      {/* Player Name */}
+                      <span
+                        className={`text-[9px] font-semibold truncate max-w-[60px] text-center leading-tight ${
+                          isWinningCard
+                            ? "text-amber-300 font-bold"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {p.name}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { emitAck, getSocket } from "@/socket/client";
 import { useSettings } from "@/hooks/useSettings";
 import { playSound } from "@/lib/sound";
-import type { CardData, Move } from "@/types";
+import type { CardData, GameType, ModeId, Move } from "@/types";
 
 export interface SeatView {
   seat: number;
@@ -20,6 +20,8 @@ export interface RoomView {
   status: "lobby" | "playing" | "finished";
   isHost: boolean;
   difficulty: "easy" | "medium" | "hard";
+  gameType: GameType;
+  quickMode: ModeId;
   you: number | null;
   seats: (SeatView | null)[];
   spectators: number;
@@ -44,6 +46,9 @@ export interface RoomView {
     queens: number;
     kingHearts: number;
     fiftyOneWins: number;
+    turnsTricksWon: number;
+    lastTrickWins: number;
+    trixWins: number;
   }[] | null;
   round: {
     mode: string;
@@ -61,6 +66,13 @@ export interface RoomView {
       newTotal: number;
       aceValue: 1 | 11 | null;
     }[];
+    trixTable?: {
+      H: { low: number; high: number } | null;
+      D: { low: number; high: number } | null;
+      C: { low: number; high: number } | null;
+      S: { low: number; high: number } | null;
+    } | null;
+    trixFinishOrder?: number[];
   } | null;
   thinkingSeats?: number[];
   history: {
@@ -121,6 +133,8 @@ export function useRoom(code: string) {
   const [roundBanner, setRoundBanner] = useState<RoundFinishedPayload | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [gameId, setGameId] = useState<string | null>(null);
+  /** Trix: seat that just got an Ace extra-turn (shown briefly as a banner). */
+  const [trixExtraTurnSeat, setTrixExtraTurnSeat] = useState<number | null>(null);
   const yourSeat = useRef<number | null>(null);
 
   useEffect(() => {
@@ -161,12 +175,14 @@ export function useRoom(code: string) {
     const onRoundFinished = (payload: RoundFinishedPayload) => {
       // Show the objective banner immediately so players see it during the trick animation.
       setRoundBanner(payload);
-      // Delay the full modal by 2.5s so the trick animation (1.5s glow + 0.65s collect) plays out.
+      // In FiftyOne mode, wait 3 seconds for winner/loser display before showing summary modal.
+      // In trick modes, delay 2.5s so the trick animation (1.5s glow + 0.65s collect) plays out.
+      const delay = payload.mode === "FiftyOne" ? 3200 : 2500;
       clearTimeout(roundFinishedTimer);
       roundFinishedTimer = setTimeout(() => {
         setRoundBanner(null);
         setRoundFinished(payload);
-      }, 2500);
+      }, delay);
     };
     const onDeal = () => playSound("deal", soundRef.current);
     const onFinished = () => playSound("win", soundRef.current);
@@ -174,6 +190,10 @@ export function useRoom(code: string) {
     const onBroken = (d: { suit: string }) => flash(`${d.suit === "H" ? "Hearts" : "Diamonds"} are now broken!`);
     const onDisc = (d: { seat: number }) => flash(`Seat ${d.seat + 1} disconnected - a bot will cover after 15s`);
     const onRecon = () => flash("A player reconnected");
+    const onTrixExtra = (d: { seat: number }) => {
+      setTrixExtraTurnSeat(d.seat);
+      setTimeout(() => setTrixExtraTurnSeat(null), 2000);
+    };
 
     s.on("connect", join);
     s.on("disconnect", () => setConnected(false));
@@ -188,6 +208,7 @@ export function useRoom(code: string) {
     s.on("suit_broken", onBroken);
     s.on("player_disconnected", onDisc);
     s.on("player_reconnected", onRecon);
+    s.on("trix_extra_turn", onTrixExtra);
     if (s.connected) void join();
     return () => {
       clearTimeout(trickTimer);
@@ -204,6 +225,7 @@ export function useRoom(code: string) {
       s.off("suit_broken", onBroken);
       s.off("player_disconnected", onDisc);
       s.off("player_reconnected", onRecon);
+      s.off("trix_extra_turn", onTrixExtra);
     };
   }, [code]);
 
@@ -216,5 +238,5 @@ export function useRoom(code: string) {
     return res;
   }, []);
 
-  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, act };
+  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, act };
 }

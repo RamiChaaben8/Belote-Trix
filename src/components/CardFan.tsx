@@ -11,6 +11,7 @@ interface CardFanProps {
   selectedCard: CardData | null;
   onCardClick: (card: CardData) => void;
   disabled?: boolean;
+  isSelectingMode?: boolean;
 }
 
 /*
@@ -40,12 +41,13 @@ export function CardFan({
   selectedCard,
   onCardClick,
   disabled,
+  isSelectingMode,
 }: CardFanProps) {
   const count = cards.length;
   if (count === 0) return null;
 
   const isCardLegal = (c: CardData): boolean => {
-    if (!isMyTurn) return false;
+    if (!isMyTurn || isSelectingMode) return false;
     return legalMoves.some((m) => m.card.suit === c.suit && m.card.rank === c.rank);
   };
 
@@ -73,7 +75,10 @@ export function CardFan({
 
         const legal = isCardLegal(card);
         const isSelected = selectedCard?.suit === card.suit && selectedCard?.rank === card.rank;
-        const canPlay = isMyTurn && legal && !disabled;
+        const canPlay = isMyTurn && legal && !disabled && !isSelectingMode;
+
+        // Check if this is a Jack that should glow strongly
+        const isGlowingJack = isMyTurn && card.rank === "J" && legal;
 
         const restY = REST_Y + droop;
 
@@ -89,7 +94,7 @@ export function CardFan({
               opacity: 1,
             }}
             whileHover={
-              canPlay
+              canPlay || isSelectingMode
                 ? {
                     y: restY - 26,
                     scale: 1.08,
@@ -113,11 +118,15 @@ export function CardFan({
               card={card}
               size="md"
               onClick={canPlay ? () => onCardClick(card) : undefined}
-              disabled={!canPlay && isMyTurn}
+              disabled={!canPlay && isMyTurn && !isSelectingMode}
               highlight={legal && isMyTurn}
               className={
-                canPlay
+                isGlowingJack
+                  ? "ring-4 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,1)] border-emerald-300 cursor-pointer"
+                  : canPlay
                   ? "ring-2 ring-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.75)] border-emerald-300 cursor-pointer"
+                  : isSelectingMode
+                  ? "opacity-100 filter-none cursor-default shadow-md"
                   : isMyTurn
                   ? "opacity-40 grayscale cursor-not-allowed"
                   : "cursor-pointer"

@@ -1,5 +1,5 @@
 import { Card } from "./card";
-import { CardData, ModeId, Move, Suit } from "@/types";
+import { CardData, ModeId, Move, Rank, Suit } from "@/types";
 
 export abstract class TrickMode {
   abstract readonly id: ModeId;
@@ -75,6 +75,153 @@ export class QueensMode extends TrickMode {
   }
 }
 
+/** Turns mode: +10 points per trick won. Always plays all 8 tricks. */
+export class TurnsMode extends TrickMode {
+  readonly id = "Turns" as const;
+  readonly restrictedSuit = null;
+  readonly avoid = false;
+  /** Each trick is worth 10 points to its winner; no per-card points. */
+  cardPoints(_c: CardData): number {
+    return 0;
+  }
+  /** Override: award +10 for winning the trick (regardless of card values). */
+  trickPoints(_cards: CardData[]): number {
+    return 10;
+  }
+  /** Turns always plays all 8 tricks — no early termination. */
+  earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null {
+    return null;
+  }
+}
+
+/**
+ * Last Trick mode: only the winner of the 8th (final) trick scores +100.
+ * All other tricks are worth 0. Always plays all 8 tricks.
+ */
+export class LastTrickMode extends TrickMode {
+  readonly id = "LastTrick" as const;
+  readonly restrictedSuit = null;
+  readonly avoid = false;
+  /** No per-card points — value is entirely in winning the final trick. */
+  cardPoints(_c: CardData): number {
+    return 0;
+  }
+  /** All intermediate tricks score 0; the engine awards the +100 after trick 8 externally. */
+  trickPoints(_cards: CardData[]): number {
+    return 0;
+  }
+  /** Last Trick always plays all 8 tricks — no early termination. */
+  earlyTermination(_completedTricks: { plays: { card: CardData }[] }[]): string | null {
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRIX MODE — shared sequence table engine
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Rank index within the sequence 7(0) 8(1) 9(2) 10(3) J(4) Q(5) K(6) A(7) */
+const TRIX_RANKS: Rank[] = ["7", "8", "9", "10", "J", "Q", "K", "A"];
+const TRIX_RANK_IDX: Record<Rank, number> = Object.fromEntries(
+  TRIX_RANKS.map((r, i) => [r, i]),
+) as Record<Rank, number>;
+
+/** Per-suit table range: the lowest and highest index already on the table. */
+export interface TrixSuitRange {
+  low: number;  // index into TRIX_RANKS
+  high: number; // index into TRIX_RANKS
+}
+
+/** The shared Trix table state: one range per suit, or null if the suit hasn't been opened. */
+export type TrixTable = { H: TrixSuitRange | null; D: TrixSuitRange | null; C: TrixSuitRange | null; S: TrixSuitRange | null };
+
+export const TRIX_SCORES: [number, number, number, number] = [-100, -50, 0, 0];
+
+export class TrixManager {
+  /** The shared table: per-suit range of played cards (null = suit not yet opened). */
+  readonly table: TrixTable = { H: null, D: null, C: null, S: null };
+
+  /** Finish order: seat indices in the order they emptied their hand (max 2 recorded). */
+  readonly finishOrder: number[] = [];
+
+  constructor() {
+    // The table starts empty: no suit is opened until the first Jack is played.
+    // The first player to hold a Jack opens the first suit chain.
+  }
+
+  /** True once at least one suit chain has been opened (a Jack has been played). */
+  get started(): boolean {
+    return this.table.H !== null || this.table.D !== null || this.table.C !== null || this.table.S !== null;
+  }
+
+  /**
+   * Legal plays for a seat's hand.
+   * Rules:
+   *  - A card is legal if it extends an already-open suit (adjacent rank), OR
+   *    opens an unopened suit (only that suit's J can do that).
+   *  - Before any suit is opened, only Jacks are legal — so the first player
+   *    with a Jack must play it and starts the first suit chain.
+   *  - Aces are optional: the player may always decline an Ace and PASS, but if
+   *    they hold any non-Ace legal card they must play one of those.
+   */
+  legalMoves(hand: Card[]): Move[] {
+    const moves: Move[] = [];
+    for (const c of hand) {
+      if (this.canPlay(c)) moves.push({ card: c.toJSON() });
+    }
+    return moves;
+  }
+
+  private canPlay(c: Card): boolean {
+    const suit = c.suit as keyof TrixTable;
+    const idx = TRIX_RANK_IDX[c.rank];
+    const range = this.table[suit];
+    if (range === null) {
+      // Suit not opened: only the J of this suit can open it
+      return c.rank === "J";
+    }
+    // Adjacent to existing range
+    return idx === range.low - 1 || idx === range.high + 1;
+  }
+
+  /**
+   * Apply a card to the table.
+   * Returns true if the play was an Ace (grants extra turn).
+   */
+  applyPlay(card: CardData): boolean {
+    const suit = card.suit as keyof TrixTable;
+    const idx = TRIX_RANK_IDX[card.rank as Rank];
+    const range = this.table[suit];
+    if (range === null) {
+      // Opening the suit (must be J — canPlay guarantees this)
+      if (card.rank !== "J") throw new Error(`Only a Jack can open ${suit}`);
+      this.table[suit] = { low: idx, high: idx };
+    } else if (idx === range.low - 1) {
+      range.low = idx;
+    } else if (idx === range.high + 1) {
+      range.high = idx;
+    } else {
+      throw new Error("Illegal Trix play: card does not extend the suit chain");
+    }
+    return card.rank === "A";
+  }
+
+  /** Call when a player empties their hand. Returns true if round should end (2nd finisher). */
+  recordFinish(seat: number): boolean {
+    if (this.finishOrder.length >= 2) return true; // already done
+    this.finishOrder.push(seat);
+    return this.finishOrder.length >= 2;
+  }
+
+  /** Compute base scores for 4 seats given finish order. Unfinished seats get 0. */
+  computeScores(): number[] {
+    const scores = [0, 0, 0, 0];
+    if (this.finishOrder.length >= 1) scores[this.finishOrder[0]] = TRIX_SCORES[0]; // -100
+    if (this.finishOrder.length >= 2) scores[this.finishOrder[1]] = TRIX_SCORES[1]; // -50
+    return scores;
+  }
+}
+
 export const FIFTY_ONE_TARGET = 51;
 export const FIFTY_ONE_REWARD = 510;
 
@@ -114,18 +261,21 @@ export class FiftyOneMode {
 }
 
 export class ModeManager {
-  private static trickModes: Record<Exclude<ModeId, "FiftyOne">, TrickMode> = {
+  private static trickModes: Record<Exclude<ModeId, "FiftyOne" | "Trix">, TrickMode> = {
     KingOfHearts: new KingOfHeartsMode(),
     Diamonds: new DiamondsMode(),
     Queens: new QueensMode(),
+    Turns: new TurnsMode(),
+    LastTrick: new LastTrickMode(),
   };
 
   static isTrickMode(id: ModeId): boolean {
-    return id !== "FiftyOne";
+    return id !== "FiftyOne" && id !== "Trix";
   }
 
   static trick(id: ModeId): TrickMode {
     if (id === "FiftyOne") throw new Error("FiftyOne is not a trick mode");
+    if (id === "Trix") throw new Error("Trix is not a trick mode");
     return ModeManager.trickModes[id];
   }
 }

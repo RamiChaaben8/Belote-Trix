@@ -13,8 +13,12 @@ interface FinalResultsModalProps {
     queens: number;
     kingHearts: number;
     fiftyOneWins: number;
+    turnsTricksWon: number;
+    lastTrickWins: number;
+    trixWins: number;
   }[] | null;
   replayId?: string | null;
+  isQuickTest?: boolean;
   onPlayAgain: () => void;
 }
 
@@ -23,6 +27,7 @@ export function FinalResultsModal({
   totals,
   stats,
   replayId,
+  isQuickTest,
   onPlayAgain,
 }: FinalResultsModalProps) {
   // Sort players by ascending total score (Lowest score = 1st place)
@@ -52,13 +57,13 @@ export function FinalResultsModal({
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: [0, 1.2, 1] }}
-            transition={{ delay: 0.2, type: "spring" }}
+            transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
             className="text-5xl sm:text-6xl mb-2"
           >
             🏆
           </motion.div>
           <span className="text-xs font-bold uppercase tracking-widest text-amber-400">
-            Match Finished
+            {isQuickTest ? "Quick Test Results" : "Match Finished"}
           </span>
           <h1 className="text-2xl sm:text-4xl font-black text-white mt-1">
             {winner.name} Wins!
@@ -108,6 +113,21 @@ export function FinalResultsModal({
                         <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
                           Tricks: {player.playerStats.tricksWon}
                         </span>
+                        {player.playerStats.turnsTricksWon > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-teal-950/60 border border-teal-700 text-teal-300">
+                            🔄 Turns: {player.playerStats.turnsTricksWon}
+                          </span>
+                        )}
+                        {player.playerStats.lastTrickWins > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-950/60 border border-rose-700 text-rose-300">
+                            🏆 Last: {player.playerStats.lastTrickWins}
+                          </span>
+                        )}
+                        {player.playerStats.trixWins > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-violet-950/60 border border-violet-700 text-violet-300">
+                            🃏 Trix: {player.playerStats.trixWins}
+                          </span>
+                        )}
                         <span className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
                           ♦: {player.playerStats.diamonds}
                         </span>
@@ -125,9 +145,11 @@ export function FinalResultsModal({
                   </div>
                 </div>
 
-                {/* Right: Total Score */}
+                {/* Right: Score */}
                 <div className="mt-2 sm:mt-0 flex sm:flex-col items-baseline sm:items-end justify-between font-mono">
-                  <span className="text-[10px] text-slate-400 sm:block uppercase">Total Score</span>
+                  <span className="text-[10px] text-slate-400 sm:block uppercase">
+                    {isQuickTest ? "Score Gained" : "Total Score"}
+                  </span>
                   <span
                     className={`text-xl sm:text-2xl font-black ${
                       isWinner ? "text-amber-400" : "text-slate-200"
