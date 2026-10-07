@@ -15,8 +15,9 @@ import { LastPlayPanel } from "@/components/LastPlayPanel";
 import { ObjectiveBanner } from "@/components/ObjectiveBanner";
 import { SwitchRevealOverlay } from "@/components/SwitchRevealOverlay";
 import { SwitchSwapAnimation } from "@/components/SwitchSwapAnimation";
+import { ScoreResetOverlay } from "@/components/ScoreResetOverlay";
 import type { LastTrickItem } from "@/components/LastPlayPanel";
-import type { LastTrick, RoomView, ChatEntry, RoundFinishedPayload } from "@/hooks/useRoom";
+import type { LastTrick, RoomView, ChatEntry, RoundFinishedPayload, ScoreResetPayload } from "@/hooks/useRoom";
 import type { CardData, Move, ModeId } from "@/types";
 
 type Act = (event: string, payload?: unknown) => Promise<unknown>;
@@ -54,6 +55,7 @@ export function Table({
   onTrixPass,
   switchCountdown,
   switchSwapAnimating = false,
+  scoreResets = [],
 }: {
   room: RoomView;
   lastTrick: LastTrick | null;
@@ -72,6 +74,8 @@ export function Table({
   gameId: string | null;
   switchCountdown?: number | null;
   switchSwapAnimating?: boolean;
+  /** Global Rule #2 — pending ⚡ SCORE RESET ⚡ notifications. */
+  scoreResets?: ScoreResetPayload[];
 }) {
   const me = room.you ?? 0;
   const rel = (seat: number) => (seat - me + 4) % 4;
@@ -229,6 +233,7 @@ export function Table({
         mode={currentMode}
         selectorName={room.selector !== null ? name(room.selector) : "—"}
         isQuickTest={room.gameType === "quick"}
+        lastModeBonus={room.lastModeBonus}
         liveScores={round?.scores}
         seats={[0, 1, 2, 3].map((seat) => ({
           seat,
@@ -289,6 +294,15 @@ export function Table({
               <span className="text-[9px] text-cyan-400/70 font-mono px-1">×2 all · selector ×4</span>
             </div>
           )}
+          {/* Global Rule #1 — Last Mode Bonus indicator (visible during the round) */}
+          {room.lastModeBonus && (
+            <div className="flex flex-col items-end gap-0.5">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-950/90 border border-orange-400/60 shadow-[0_0_12px_rgba(249,115,22,0.5)]">
+                <span className="text-orange-300 font-black text-[11px]">🔥 LAST MODE BONUS</span>
+              </div>
+              <span className="text-[9px] text-orange-400/80 font-mono px-1">×2 all players</span>
+            </div>
+          )}
         </div>
 
         {/* LEFT player */}
@@ -304,6 +318,12 @@ export function Table({
             <CenterTrick
               isSelectingMode={!modalOpen && (room.phase === "selecting" || room.phase === "star_sub")}
               isCurrentUserSelector={isSelector}
+              isLastModePick={
+                room.gameType !== "quick" &&
+                isSelector &&
+                room.phase === "selecting" &&
+                room.remaining.length === 1
+              }
               selectorName={room.selector !== null ? name(room.selector) : ""}
               remainingModes={(room.remaining as ModeId[]) ?? []}
               onSelectMode={(m) => void act("select_mode", { mode: m })}
@@ -532,9 +552,16 @@ export function Table({
           starSubMode={roundFinished.starSubMode}
           switchSubMode={roundFinished.switchSubMode}
           switchSwaps={roundFinished.switchSwaps}
+          lastModeBonus={roundFinished.lastModeBonus}
           onContinue={onRoundDismissed}
         />
       )}
+
+      {/* ======================================================== */}
+      {/* ⚡ SCORE RESET ⚡ (Global Rule #2)                         */}
+      {/* Sits above the summary modal whenever a total hit ±1000.  */}
+      {/* ======================================================== */}
+      <ScoreResetOverlay resets={scoreResets} names={[0, 1, 2, 3].map((s) => name(s))} />
 
       {/* FINAL RESULTS */}
       {room.phase === "finished" && (!roundFinished || room.gameType === "quick") && (

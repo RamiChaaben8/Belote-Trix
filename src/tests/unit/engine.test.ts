@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BotPlayer, Card, Deck, FiftyOneMode, GameEngine, GameRoom, ModeManager, RoundManager, RuleEngine, TrickEngine, mulberry32 } from "@/game-engine";
+import { BotPlayer, Card, Deck, FiftyOneMode, GameEngine, GameRoom, ModeManager, RoundManager, RuleEngine, ScoreManager, TrickEngine, mulberry32 } from "@/game-engine";
 import { chooseMode, chooseMove } from "@/ai/ai";
-import { Difficulty, MODE_IDS, ModeId } from "@/types";
+import { Difficulty, EngineEvent, MODE_IDS, ModeId } from "@/types";
 
 const c = (rank: string, suit: string) => new Card(suit as never, rank as never);
 const hands = (...h: Card[][]) => h;
@@ -191,13 +191,19 @@ describe("GameEngine full matches", () => {
       if (r.mode === "General" && r.endReason !== "Capot") expect(baseSum).toBe(490);
       // Trix: 1st gets -100, 2nd gets -50, others 0 → sum = -150
       if (r.mode === "Trix") expect(baseSum).toBe(-150);
-      // Selector score: x2 base, x4 for Switch, x4 for Star, x8 for Star(Switch)
+      // Selector score: x2 base, x4 for Switch, x4 for Star, x8 for Star(Switch),
+      // doubled again for the selector's final remaining mode (Last Mode Bonus)
       // (except Capot which bypasses all multipliers)
       if (r.endReason !== "Capot") {
         const isStar = r.mode === "Star";
         const isSwitch = r.mode === "Switch" || r.starSubMode === "Switch";
-        const expectedMultiplier = (isStar ? 2 : 1) * (isSwitch ? 2 : 1) * 2; // selector always x2
-        expect(r.scores[r.selector]).toBe(r.base[r.selector] * expectedMultiplier);
+        const lastMode = r.lastModeBonus ? 2 : 1;
+        const meta = (isStar ? 2 : 1) * (isSwitch ? 2 : 1) * lastMode;
+        expect(r.scores[r.selector]).toBe(r.base[r.selector] * meta * 2); // selector always x2
+        // Every other seat receives all meta multipliers but the selector bonus.
+        r.scores.forEach((s, seat) => {
+          if (seat !== r.selector) expect(s).toBe(r.base[seat] * meta);
+        });
       }
     }
   });
@@ -810,5 +816,179 @@ describe("Trix mode", () => {
     expect(sortedBase[3]).toBe(0);
     // Selector multiplier applies: selector's score = base × 2
     expect(result.scores[result.selector]).toBe(result.base[result.selector] * 2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GLOBAL RULES — apply to every mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Full-match engine seeded with custom totals and a rigged K♥ hand. */
+function riggedEngine(totals: number[], seed = 5): GameEngine {
+  const players = [0, 1, 2, 3].map((i) => new BotPlayer(i, `B${i}`, "easy"));
+  const e = new GameEngine(players, mulberry32(seed));
+  e.start();
+  e.totals = [...totals];
+  // Seat 1 wins the very first trick with A♠ while seat 2 dumps K♥:
+  // base = [0, 150, 0, 0] and the round ends immediately.
+  e.pendingHands = [
+    [c("9", "S"), c("7", "C")],
+    [c("A", "S"), c("8", "H")],
+    [c("K", "H"), c("9", "H")],
+    [c("7", "H"), c("7", "D")],
+  ];
+  return e;
+}
+
+/** Selects KingOfHearts with seat 0 and drives the rigged round to completion. */
+function playRiggedRound(e: GameEngine): EngineEvent[] {
+  e.selectMode(0, "KingOfHearts");
+  const events: EngineEvent[] = [];
+  let guard = 0;
+  while (e.phase === "playing" && e.round && !e.round.finished && guard++ < 50) {
+    events.push(...e.play(e.round.turn, e.round.legalMoves(e.round.turn)[0]));
+  }
+  return events;
+}
+
+describe("Global Rule #1 — Last Mode Bonus", () => {
+  it("stacks ×2 on every seat for the selector's final remaining mode", () => {
+    // 150 → selector: 150 ×2(selector) ×2(last) = 600 · others: ×2 = 300
+    expect(ScoreManager.applyMultiplier([150, 150, 150, 150], 0, false, false, true)).toEqual([600, 300, 300, 300]);
+    // Switch: 150 ×2(switch) ×2(selector) ×2(last) = 1200
+    expect(ScoreManager.applyMultiplier([150, 150, 150, 150], 0, true, false, true)).toEqual([1200, 600, 600, 600]);
+    // Star + Switch: 150 ×2 ×2 ×2 ×2 = 2400
+    expect(ScoreManager.applyMultiplier([150, 150, 150, 150], 0, true, true, true)).toEqual([2400, 1200, 1200, 1200]);
+    expect(ScoreManager.multipliers(0, 4, false, false, true)).toEqual([4, 2, 2, 2]);
+    expect(ScoreManager.multipliers(0, 4, false, false, false)).toEqual([2, 1, 1, 1]);
+  });
+
+  it("marks the round and doubles all four seats when the selector is down to one mode", () => {
+    const e = riggedEngine([0, 0, 0, 0]);
+    e.used[0] = MODE_IDS.filter((m) => m !== "LastTrick");
+    e.pendingHands = [
+      [c("A", "S"), c("10", "S"), c("A", "H"), c("10", "H"), c("A", "D"), c("10", "D"), c("A", "C"), c("10", "C")],
+      [c("9", "S"), c("8", "S"), c("9", "H"), c("8", "H"), c("9", "D"), c("8", "D"), c("9", "C"), c("8", "C")],
+      [c("K", "S"), c("Q", "S"), c("K", "H"), c("Q", "H"), c("K", "D"), c("Q", "D"), c("K", "C"), c("Q", "C")],
+      [c("J", "S"), c("7", "S"), c("J", "H"), c("7", "H"), c("J", "D"), c("7", "D"), c("J", "C"), c("7", "C")],
+    ];
+    expect(e.remainingModes(0)).toEqual(["LastTrick"]);
+
+    e.selectMode(0, "LastTrick");
+    expect(e.lastModeBonus).toBe(true);
+
+    let guard = 0;
+    while (e.phase === "playing" && e.round && !e.round.finished && guard++ < 100) {
+      e.play(e.round.turn, e.round.legalMoves(e.round.turn)[0]);
+    }
+
+    const res = e.results[0];
+    expect(res.lastModeBonus).toBe(true);
+    expect(res.multipliers).toEqual([4, 2, 2, 2]);
+    expect(res.scores[res.selector]).toBe(res.base[res.selector] * 4);
+    // The bonus is only live during that round.
+    expect(e.lastModeBonus).toBe(false);
+  });
+
+  it("fires exactly once per player across a full match", () => {
+    const e = playFullGame("medium", 7);
+    expect(e.phase).toBe("finished");
+    const bonusRounds = e.results.filter((r) => r.lastModeBonus);
+    expect(bonusRounds).toHaveLength(4);
+    expect([...new Set(bonusRounds.map((r) => r.selector))].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
+    for (const r of bonusRounds) {
+      const meta =
+        (r.mode === "Star" ? 2 : 1) * (r.mode === "Switch" || r.starSubMode === "Switch" ? 2 : 1) * 2;
+      expect(r.multipliers[r.selector]).toBe(meta * 2);
+      r.multipliers.forEach((m, seat) => {
+        if (seat !== r.selector) expect(m).toBe(meta);
+      });
+    }
+    expect(e.results.filter((r) => !r.lastModeBonus)).toHaveLength(36);
+  });
+
+  it("never applies in Quick Test mode", () => {
+    const room = new GameRoom("QTEST01", "host", mulberry32(11), "quick", "KingOfHearts");
+    room.fillBots("medium");
+    room.start();
+    expect(room.engine!.lastModeBonus).toBe(false);
+    let guard = 0;
+    while (room.engine!.phase !== "finished" && guard++ < 500) room.autoAct();
+    const res = room.engine!.results[0];
+    expect(res.lastModeBonus).toBe(false);
+    expect(res.multipliers).toEqual([2, 1, 1, 1]);
+  });
+});
+
+describe("Global Rule #2 — Thousand Reset", () => {
+  it("zeroes exact multiples of 1000 (positive or negative) and nothing else", () => {
+    for (const v of [1000, 2000, 99000, -1000, -2000, -99000]) {
+      expect(ScoreManager.shouldReset(v)).toBe(true);
+      expect(ScoreManager.applyThousandReset(v)).toBe(0);
+    }
+    for (const v of [0, 999, -999, 1001, -1001, 999001, -50, -100, -250, 980]) {
+      expect(ScoreManager.shouldReset(v)).toBe(false);
+      expect(ScoreManager.applyThousandReset(v)).toBe(v);
+    }
+    expect(ScoreManager.applyThousandResets([1000, -1000, 500, 0])).toEqual([0, 0, 500, 0]);
+  });
+
+  it("resets a total that lands on +1000 and announces it", () => {
+    const e = riggedEngine([0, 850, 0, 0]); // 850 + 150 = 1000
+    const events = playRiggedRound(e);
+    expect(e.totals).toEqual([0, 0, 0, 0]);
+    const resets = events.filter((ev) => ev.type === "score_reset");
+    expect(resets).toHaveLength(1);
+    expect(resets[0].data).toEqual({ seat: 1, reached: 1000, total: 0 });
+  });
+
+  it("resets a total that lands on -1000", () => {
+    const e = riggedEngine([0, -1150, 0, 0]); // -1150 + 150 = -1000
+    const events = playRiggedRound(e);
+    expect(e.totals[1]).toBe(0);
+    expect(events.filter((ev) => ev.type === "score_reset")).toHaveLength(1);
+  });
+
+  it("leaves totals alone and emits nothing when no total is a multiple of 1000", () => {
+    const e = riggedEngine([0, 980, -990, 500]); // → 0, 1130, -990, 500
+    const events = playRiggedRound(e);
+    expect(e.totals).toEqual([0, 1130, -990, 500]);
+    expect(events.filter((ev) => ev.type === "score_reset")).toHaveLength(0);
+  });
+
+  it("keeps exact zeros untouched (no reset event for a player already at 0)", () => {
+    const e = riggedEngine([0, 0, 0, 0]);
+    const events = playRiggedRound(e);
+    expect(e.totals).toEqual([0, 150, 0, 0]);
+    expect(events.filter((ev) => ev.type === "score_reset")).toHaveLength(0);
+  });
+});
+
+describe("Global Rules #3 / #4 — negative scores & winner determination", () => {
+  it("never clamps or converts negative totals", () => {
+    const e = riggedEngine([-50, -100, -250, 300]);
+    playRiggedRound(e);
+    expect(e.totals).toEqual([-50, 50, -250, 300]);
+  });
+
+  it("awards the win to the LOWEST score, negatives included", () => {
+    expect(ScoreManager.winners([-200, 50, 100, 300])).toEqual([0]);
+    expect(ScoreManager.winners([80, -100, 20, 150])).toEqual([1]);
+    expect(ScoreManager.winners([-800, -100, 20, 150])).toEqual([0]);
+    expect(ScoreManager.winners([0, 0, 50, 100])).toEqual([0, 1]);
+  });
+
+  it("ranks ascending so the best (most negative) score sits at the top", () => {
+    expect(ScoreManager.ranking([300, 50, 0, -100, -800])).toEqual([4, 3, 2, 1, 0]);
+    expect(ScoreManager.ranking([-450, -120, 80, 330])).toEqual([0, 1, 2, 3]);
+  });
+
+  it("full match: a negative total still wins the game", () => {
+    const e = playFullGame("hard", 21);
+    expect(e.phase).toBe("finished");
+    const best = Math.min(...e.totals);
+    expect(ScoreManager.winners(e.totals)).toContain(e.totals.indexOf(best));
+    // The persisted/engine totals always reflect the reset rule.
+    for (const t of e.totals) expect(ScoreManager.shouldReset(t)).toBe(false);
   });
 });

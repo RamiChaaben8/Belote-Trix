@@ -11,14 +11,16 @@ interface Props {
 }
 
 function getBannerContent(banner: RoundFinishedPayload) {
-  const { mode, endReason, base, scores, selector } = banner;
+  const { mode, endReason, base, scores, selector, multipliers } = banner;
 
   // Find the winner (seat with non-zero base in trick modes)
   const winnerSeat = base.findIndex((b) => b > 0);
   const baseScore = winnerSeat >= 0 ? base[winnerSeat] : 0;
   const finalScore = winnerSeat >= 0 ? scores[winnerSeat] : 0;
   const isSelector = winnerSeat === selector;
-  const multiplier = isSelector ? 2 : 1;
+  // Server-computed stack (selector × Switch × Star × Last Mode) keeps the
+  // banner math in sync with the actual score.
+  const multiplier = multipliers?.[winnerSeat] ?? (isSelector ? 2 : 1);
 
   if (mode === "KingOfHearts" || endReason === "King of Hearts Captured") {
     return {
@@ -290,6 +292,14 @@ export function ObjectiveBanner({ banner, names, selectorSeat }: Props) {
                     {content.winnerSeat === selectorSeat && (
                       <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-purple-900 text-purple-300 border border-purple-500/40">
                         Selector ×2
+                      </span>
+                    )}
+                    {banner.lastModeBonus && (
+                      <span
+                        className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-orange-900 text-orange-200 border border-orange-400/50"
+                        data-testid="last-mode-banner-chip"
+                      >
+                        🔥 Last Mode ×2
                       </span>
                     )}
                   </div>

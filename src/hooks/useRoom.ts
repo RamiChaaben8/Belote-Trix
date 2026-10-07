@@ -38,6 +38,8 @@ export interface RoomView {
   selector: number | null;
   used: string[][];
   modes: string[];
+  /** Global Rule #1 — the current round is the selector's final remaining mode (×2). */
+  lastModeBonus: boolean;
   remaining: string[];
   roundNumber: number;
   totalRounds: number;
@@ -99,6 +101,7 @@ export interface RoomView {
     starSubMode?: string;
     switchSubMode?: string;
     switchSwaps?: [[number, number], [number, number]];
+    lastModeBonus?: boolean;
   }[];
   lastRoundResult: {
     number: number;
@@ -111,6 +114,7 @@ export interface RoomView {
     starSubMode?: string;
     switchSubMode?: string;
     switchSwaps?: [[number, number], [number, number]];
+    lastModeBonus?: boolean;
   } | null;
   completedModes: string[];
   starState: {
@@ -154,6 +158,17 @@ export interface RoundFinishedPayload {
   starSubMode?: string;
   switchSubMode?: string;
   switchSwaps?: [[number, number], [number, number]];
+  /** Global Rule #1 — this round doubled every seat (selector's final mode). */
+  lastModeBonus?: boolean;
+}
+
+/** Global Rule #2 — a seat's total landed on an exact multiple of 1000. */
+export interface ScoreResetPayload {
+  seat: number;
+  /** The value that triggered the reset (±1000, ±2000, …). */
+  reached: number;
+  /** The total after the reset (always 0). */
+  total: number;
 }
 
 export function useRoom(code: string) {
@@ -174,6 +189,8 @@ export function useRoom(code: string) {
   const [trixExtraTurnSeat, setTrixExtraTurnSeat] = useState<number | null>(null);
   const [switchCountdown, setSwitchCountdown] = useState<number | null>(null);
   const [switchSwapAnimating, setSwitchSwapAnimating] = useState(false);
+  /** Global Rule #2 — pending ⚡ SCORE RESET overlays (cleared after ~2.8s). */
+  const [scoreResets, setScoreResets] = useState<ScoreResetPayload[]>([]);
   const yourSeat = useRef<number | null>(null);
 
   useEffect(() => {
@@ -243,6 +260,14 @@ export function useRoom(code: string) {
       setTimeout(() => setSwitchSwapAnimating(false), 2500);
     };
 
+    // Global Rule #2 — ⚡ SCORE RESET ⚡ (shown ~2.8s, alongside any same-round resets)
+    let scoreResetTimer: ReturnType<typeof setTimeout>;
+    const onScoreReset = (payload: ScoreResetPayload) => {
+      setScoreResets((prev) => [...prev, payload]);
+      clearTimeout(scoreResetTimer);
+      scoreResetTimer = setTimeout(() => setScoreResets([]), 2800);
+    };
+
     s.on("connect", join);
     s.on("disconnect", () => setConnected(false));
     s.on("room_state", onState);
@@ -259,10 +284,12 @@ export function useRoom(code: string) {
     s.on("trix_extra_turn", onTrixExtra);
     s.on("switch_countdown", onSwitchCountdown);
     s.on("switch_swap_complete", onSwitchSwapComplete);
+    s.on("score_reset", onScoreReset);
     if (s.connected) void join();
     return () => {
       clearTimeout(trickTimer);
       clearTimeout(roundFinishedTimer);
+      clearTimeout(scoreResetTimer);
       s.off("connect", join);
       s.off("room_state", onState);
       s.off("chat_message", onChat);
@@ -278,6 +305,7 @@ export function useRoom(code: string) {
       s.off("trix_extra_turn", onTrixExtra);
       s.off("switch_countdown", onSwitchCountdown);
       s.off("switch_swap_complete", onSwitchSwapComplete);
+      s.off("score_reset", onScoreReset);
     };
   }, [code]);
 
@@ -290,5 +318,5 @@ export function useRoom(code: string) {
     return res;
   }, []);
 
-  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, switchCountdown, switchSwapAnimating, act };
+  return { room, chat, error, connected, lastTrick, roundFinished, setRoundFinished, roundBanner, notice, gameId, trixExtraTurnSeat, switchCountdown, switchSwapAnimating, scoreResets, act };
 }

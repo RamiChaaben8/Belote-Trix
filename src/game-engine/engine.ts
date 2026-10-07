@@ -25,6 +25,8 @@ export interface RoundResult {
   multipliers: number[];
   /** Final points (base × multipliers). */
   scores: number[];
+  /** Global Rule #1 — true when the selector picked their final remaining mode (×2 for everyone). */
+  lastModeBonus: boolean;
   generalBreakdown?: import("./modes").GeneralBreakdown[];
   round: RoundManager;
   /** Star: the sub-mode replayed under Star. */
@@ -55,6 +57,8 @@ export class GameEngine {
   selector = 0;
   used: ModeId[][] = [[], [], [], []];
   totals: number[] = [0, 0, 0, 0];
+  /** Global Rule #1 — set when the current round is the selector's final remaining mode. */
+  lastModeBonus = false;
   roundNumber = 0;
   pendingHands: Card[][] = [];
   round: RoundManager | null = null;
@@ -111,6 +115,7 @@ export class GameEngine {
     this.round = null;
     this.starState = null;
     this.switchState = null;
+    this.lastModeBonus = false;
     return [{ type: "deal_cards", data: { roundNumber: this.roundNumber + 1, selector: this.selector } }];
   }
 
@@ -118,6 +123,10 @@ export class GameEngine {
     if (this.phase !== "selecting") throw new Error("Not in selection phase");
     if (seat !== this.selector) throw new Error("You are not the selector");
     if (!this.remainingModes(seat).includes(mode)) throw new Error("Mode unavailable");
+
+    // Global Rule #1 — Last Mode Bonus: picking the final remaining mode
+    // doubles every seat's score for this round. Full matches only.
+    this.lastModeBonus = this.gameType !== "quick" && this.remainingModes(seat).length === 1;
 
     if (mode === "Star") {
       if (!ModeManager.starAvailable(this.used)) {
@@ -296,17 +305,25 @@ export class GameEngine {
 
     const isStar = !!this.starState;
     const isSwitch = !!this.switchState;
+    const isLastMode = this.lastModeBonus;
     const isCapot = r.endReason === "Capot" && r.mode !== "General";
 
     // Capot bypasses selector and all meta multipliers — fixed ±100 stand as-is.
     const multipliers = isCapot
       ? Array(this.players.length).fill(1)
-      : ScoreManager.multipliers(this.selector, this.players.length, isSwitch, isStar);
+      : ScoreManager.multipliers(this.selector, this.players.length, isSwitch, isStar, isLastMode);
     const finalScores = isCapot
       ? [...base]
-      : ScoreManager.applyMultiplier(base, this.selector, isSwitch, isStar);
+      : ScoreManager.applyMultiplier(base, this.selector, isSwitch, isStar, isLastMode);
 
-    this.totals = ScoreManager.add(this.totals, finalScores);
+    // Global Rule #2 — Thousand Reset: an exact multiple of 1000 (≠ 0) wipes to 0.
+    const totalsAfterRound = ScoreManager.add(this.totals, finalScores);
+    const scoreResets: { seat: number; reached: number }[] = [];
+    this.totals = totalsAfterRound.map((total, seat) => {
+      const reset = ScoreManager.applyThousandReset(total);
+      if (reset !== total) scoreResets.push({ seat, reached: total });
+      return reset;
+    });
     const endReason = r.endReason;
 
     // Determine the canonical result mode name
@@ -323,6 +340,7 @@ export class GameEngine {
       base,
       multipliers,
       scores: finalScores,
+      lastModeBonus: isLastMode,
       round: r,
       generalBreakdown: r.mode === "General" ? r.generalBreakdown.map((b) => ({ ...b })) : undefined,
     };
@@ -351,17 +369,26 @@ export class GameEngine {
           base,
           multipliers,
           scores: finalScores,
+          lastModeBonus: isLastMode,
           generalBreakdown: r.mode === "General" ? r.generalBreakdown : undefined,
           starSubMode: result.starSubMode,
           switchSubMode: result.switchSubMode,
           switchSwaps: result.switchSwaps,
         },
       },
+      // Global Rule #2 — announce every reset so clients can celebrate it.
+      ...scoreResets.map(({ seat, reached }) => ({
+        type: "score_reset",
+        data: { seat, reached, total: this.totals[seat] },
+      })),
       { type: "score_updated", data: { totals: this.totals, deltas: this.totals.map((t, i) => t - before[i]) } },
     ];
 
     this.starState = null;
     this.switchState = null;
+    // The bonus belongs to the round that just ended — clear it for the next
+    // selection phase (deal() does the same, but the game can also end here).
+    this.lastModeBonus = false;
 
     if (this.gameType === "quick" || this.roundNumber >= this.totalRounds) {
       this.phase = "finished";

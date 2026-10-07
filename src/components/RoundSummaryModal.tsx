@@ -18,6 +18,8 @@ interface RoundSummaryModalProps {
   starSubMode?: string;
   switchSubMode?: string;
   switchSwaps?: [[number, number], [number, number]];
+  /** Global Rule #1 — this round was the selector's final remaining mode (×2 for everyone). */
+  lastModeBonus?: boolean;
   onContinue: () => void;
 }
 
@@ -34,6 +36,7 @@ export function RoundSummaryModal({
   starSubMode,
   switchSubMode,
   switchSwaps,
+  lastModeBonus = false,
   onContinue,
 }: RoundSummaryModalProps) {
   // Pick an emoji for the end reason
@@ -145,6 +148,18 @@ export function RoundSummaryModal({
             </div>
           )}
 
+          {/* Global Rule #1 — Last Mode Bonus badge */}
+          {lastModeBonus && (
+            <div
+              className="mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-orange-950/80 border border-orange-400/60 text-orange-300 font-black text-sm shadow-[0_0_20px_rgba(249,115,22,0.45)]"
+              data-testid="last-mode-bonus-badge"
+            >
+              <span>🔥</span>
+              <span>LAST MODE BONUS</span>
+              <span className="text-amber-300">×2</span>
+            </div>
+          )}
+
           {/* Switch swap pairs */}
           {isSwitch && switchSwaps && (
             <div className="mt-2 text-xs text-slate-400 space-y-0.5">
@@ -170,6 +185,14 @@ export function RoundSummaryModal({
           ) : (
             <p className="text-xs text-slate-400 mt-2">
               Selector ({players[selectorSeat]?.name}) receives <b>x2 Double Points</b>!
+            </p>
+          )}
+
+          {/* Global Rule #1 — stacking explanation */}
+          {lastModeBonus && !isCapot && (
+            <p className="text-xs text-orange-300/90 mt-1.5 font-semibold">
+              🔥 Last Mode Bonus — final mode in {players[selectorSeat]?.name}&apos;s list:{" "}
+              <b>every player scores ×2 this round</b> and all multipliers stack!
             </p>
           )}
         </div>
@@ -309,8 +332,11 @@ export function RoundSummaryModal({
           </table>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-slate-400 px-1 mb-5">
-          <span>Remember: <b>Lowest score wins the match!</b></span>
+        <div className="flex flex-col items-center text-center text-xs text-slate-400 px-1 mb-5">
+          <span>
+            🏆 <b className="text-emerald-300">LOWEST SCORE WINS</b>
+          </span>
+          <span className="text-[11px] text-slate-500">(negative scores are better)</span>
         </div>
 
         <Button onClick={onContinue} className="w-full py-3 text-base shadow-xl font-bold">

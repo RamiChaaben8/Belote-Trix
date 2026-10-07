@@ -9,6 +9,8 @@ interface ScoreboardPanelProps {
   mode: string;
   selectorName: string;
   isQuickTest?: boolean;
+  /** Global Rule #1 — current round doubles every seat (selector's final mode). */
+  lastModeBonus?: boolean;
   liveScores?: number[];
   seats: {
     seat: number;
@@ -25,6 +27,7 @@ export function ScoreboardPanel({
   mode,
   selectorName,
   isQuickTest,
+  lastModeBonus = false,
   seats,
   liveScores,
 }: ScoreboardPanelProps) {
@@ -42,12 +45,15 @@ export function ScoreboardPanel({
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-1 pb-1 border-b border-slate-800">
-        <div className="flex items-center gap-1">
-          <span className="font-extrabold text-[10px] text-emerald-400 uppercase tracking-wider">
-            🏆 Lowest Wins
+        <div className="flex flex-col leading-tight min-w-0">
+          <span className="font-extrabold text-[10px] text-emerald-400 uppercase tracking-tight">
+            🏆 LOWEST SCORE WINS
+          </span>
+          <span className="text-[8px] text-slate-500 font-semibold">
+            (negative scores are better)
           </span>
           {isQuickTest && (
-            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase tracking-tight">
+            <span className="mt-0.5 self-start px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[9px] font-black uppercase tracking-tight">
               TEST MODE
             </span>
           )}
@@ -79,6 +85,19 @@ export function ScoreboardPanel({
           </span>
         </div>
       </div>
+
+      {/* Global Rule #1 — Last Mode Bonus */}
+      {lastModeBonus && (
+        <div
+          className="flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg bg-orange-950/80 border border-orange-400/60 shadow-[0_0_12px_rgba(249,115,22,0.45)]"
+          data-testid="last-mode-bonus"
+        >
+          <span className="text-[10px] font-black uppercase tracking-wider text-orange-300 whitespace-nowrap">
+            🔥 LAST MODE BONUS
+          </span>
+          <span className="text-[11px] font-black text-amber-300">×2</span>
+        </div>
+      )}
 
       {/* Ranking */}
       <div className="pt-1 border-t border-slate-800 space-y-0.5" data-testid="scoreboard">

@@ -31,7 +31,7 @@ export default function LeaderboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <CardTitle className="mb-0">Leaderboard</CardTitle>
         <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-950/80 text-emerald-300 border border-emerald-600/50">
-          🏆 Winner is the player with the LOWEST score
+          🏆 LOWEST SCORE WINS (negative scores are better)
         </span>
       </div>
       {error && <p className="text-red-400">{error}</p>}

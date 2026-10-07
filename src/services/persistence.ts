@@ -74,7 +74,9 @@ export async function saveGame(room: GameRoom): Promise<string | null> {
         meta: p.total !== undefined ? { total: p.total, aceValue: p.aceValue ?? null } : undefined,
       })),
     });
-    running = running.map((t, i) => t + res.scores[i]);
+    // Keep the replay chart in sync with the live totals: apply the
+    // Thousand Reset (global Rule #2) as the running score crosses ±1000.
+    running = running.map((t, i) => ScoreManager.applyThousandReset(t + res.scores[i]));
     await prisma.scoreHistory.createMany({
       data: running.map((total, seat) => ({ gameId: game.id, round: res.number, seat, delta: res.scores[seat], total })),
     });

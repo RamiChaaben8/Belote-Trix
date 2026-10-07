@@ -72,6 +72,9 @@ export function FinalResultsModal({
             <span>⭐</span>
             <span>Winner is the player with the LOWEST score ({winner.score} pts)</span>
           </div>
+          <div className="mt-1.5 text-[11px] text-slate-400 font-medium">
+            🏆 LOWEST SCORE WINS (negative scores are better)
+          </div>
         </div>
 
         {/* Podium Rankings Table */}

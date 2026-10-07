@@ -18,6 +18,8 @@ interface CenterTrickProps {
   selectorName: string;
   remainingModes: ModeId[];
   onSelectMode: (mode: ModeId) => void;
+  /** Global Rule #1 — the selector's final remaining mode: picking it doubles every seat (×2). */
+  isLastModePick?: boolean;
 
   // Star sub-mode picker
   starPhase?: "sub_select" | null;
@@ -62,6 +64,7 @@ export function CenterTrick({
   selectorName,
   remainingModes,
   onSelectMode,
+  isLastModePick = false,
   starPhase,
   starCompletedModes = [],
   onSelectStarSubMode,
@@ -314,6 +317,17 @@ export function CenterTrick({
                 <p className="text-xs text-purple-300 font-semibold mb-4">
                   You are Selector: Points for this mode will be <b>DOUBLED (x2)</b>!
                 </p>
+
+                {/* Global Rule #1 — heads-up before the final mode gets picked */}
+                {isLastModePick && (
+                  <div
+                    className="mb-3 flex items-center justify-center gap-2 px-4 py-1.5 rounded-full bg-orange-950/80 border border-orange-400/60 shadow-[0_0_15px_rgba(249,115,22,0.5)]"
+                    data-testid="last-mode-pick-hint"
+                  >
+                    <span className="text-xs font-black text-orange-300">🔥 LAST MODE BONUS</span>
+                    <span className="text-xs font-black text-amber-300">×2</span>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3 w-full">
                   {remainingModes.map((m) => (
